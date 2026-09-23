@@ -1,0 +1,15 @@
+[project]
+name = "patent_mailroom_assistant"
+version = "0.1.0"
+requires-python = ">=3.12"
+
+dependencies = [
+    "fastapi",
+    "uvicorn",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "httpx",
+]
