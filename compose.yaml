@@ -1,0 +1,13 @@
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: patent_mailroom
+      POSTGRES_USER: patent_mailroom
+      POSTGRES_PASSWORD: patent_mailroom
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+volumes:
+  postgres_data:
