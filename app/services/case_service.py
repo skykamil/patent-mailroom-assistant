@@ -1,8 +1,10 @@
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from psycopg.errors import UniqueViolation
 
 from app.db.models.case import Case
 from app.domain.case_rules import derive_jurisdiction
-from app.domain.exceptions import CaseAlreadyExistsError
+from app.domain.exceptions import ApplicationNumberAlreadyExistsError, CaseAlreadyExistsError
 from app.repositories import case_repository
 from app.schemas.case import CaseCreate
 
@@ -22,4 +24,21 @@ def create_case(db: Session, case_data: CaseCreate) -> Case:
         grant_date=case_data.grant_date,
         agent_reference=case_data.agent_reference
     )
-    return case_repository.create_case(db, case)
+    created_case = case_repository.create_case(db, case)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        if (
+            isinstance(exc.orig, UniqueViolation)
+            and exc.orig.diag.constraint_name == "uq_cases_jurisdiction_application_number"
+            ):
+            raise ApplicationNumberAlreadyExistsError(f"Application number {case_data.application_number} already exists in jurisdiction {jurisdiction}") from exc
+        if (
+            isinstance(exc.orig, UniqueViolation)
+            and exc.orig.diag.constraint_name == "cases_internal_reference_key"
+        ):
+            raise CaseAlreadyExistsError(f"Case with internal reference {case_data.internal_reference} already exists") from exc
+        raise
+    db.refresh(created_case)
+    return created_case

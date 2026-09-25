@@ -5,8 +5,6 @@ from app.db.models.case import Case
 
 def create_case(db: Session, case: Case) -> Case:
     db.add(case)
-    db.commit()
-    db.refresh(case)
     return case
 
 def get_case_by_internal_reference(db: Session, internal_reference: str) -> Case | None:

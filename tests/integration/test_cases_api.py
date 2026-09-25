@@ -6,6 +6,7 @@ from sqlalchemy.orm import sessionmaker
 from app.api.dependencies import get_db
 from app.db.models.case import Case
 from app.main import app
+from app.services import case_service
 
 TEST_DATABASE_URL = "postgresql+psycopg://patent_mailroom:patent_mailroom@localhost:5432/patent_mailroom_test"
 
@@ -72,3 +73,94 @@ def test_create_case_returns_409_when_internal_reference_exists():
         assert response_data["detail"] == ("Case with internal reference PAT-CN-901 already exists")
     finally:
         delete_case_by_internal_reference("PAT-CN-901")
+
+def test_create_case_returns_422_for_invalid_internal_reference():
+    response = client.post(
+        "/cases",
+        json={
+            "internal_reference": "PATCN001"
+        },
+    )
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+def test_create_case_returns_422_when_internal_reference_is_too_long():
+    response = client.post(
+        "/cases",
+        json={
+            "internal_reference": "PAT-CN-" + "1" * 44
+        },
+    )
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+def test_create_case_allows_same_application_number_in_different_jurisdictions():
+    delete_case_by_internal_reference("PAT-CN-903")
+    delete_case_by_internal_reference("PAT-EP-904")
+    try:
+        first_response = client.post(
+            "/cases",
+            json={
+                "internal_reference": "PAT-CN-903",
+                "application_number": "123456789"
+            },
+        )
+        second_response = client.post(
+            "/cases",
+            json={
+                "internal_reference": "PAT-EP-904",
+                "application_number": "123456789"
+            },
+        )
+        assert first_response.status_code == status.HTTP_201_CREATED
+        assert second_response.status_code == status.HTTP_201_CREATED
+    finally:
+        delete_case_by_internal_reference("PAT-CN-903")
+        delete_case_by_internal_reference("PAT-EP-904")
+
+def test_create_case_returns_409_for_duplicate_application_number_in_same_jurisdiction():
+    delete_case_by_internal_reference("PAT-CN-907")
+    delete_case_by_internal_reference("PAT-CN-908")
+    try:
+        first_response = client.post(
+            "/cases",
+            json={
+                "internal_reference": "PAT-CN-907",
+                "application_number": "987654321"
+            },
+        )
+        second_response = client.post(
+            "/cases",
+            json={
+                "internal_reference": "PAT-CN-908",
+                "application_number": "987654321"
+            },
+        )
+        assert first_response.status_code == status.HTTP_201_CREATED
+        assert second_response.status_code == status.HTTP_409_CONFLICT
+    finally:
+        delete_case_by_internal_reference("PAT-CN-907")
+        delete_case_by_internal_reference("PAT-CN-908")
+
+def test_create_case_returns_409_when_internal_reference_conflict_occurs_at_database_write(monkeypatch):
+    monkeypatch.setattr(
+        case_service.case_repository,
+        "get_case_by_internal_reference",
+        lambda db, internal_reference: None
+    )
+    delete_case_by_internal_reference("PAT-CN-910")
+    try:
+        first_response = client.post(
+            "/cases",
+            json={
+                "internal_reference": "PAT-CN-910"
+            },
+        )
+        second_response = client.post(
+            "/cases",
+            json={
+                "internal_reference": "PAT-CN-910"
+            },
+        )
+        assert first_response.status_code == status.HTTP_201_CREATED
+        assert second_response.status_code == status.HTTP_409_CONFLICT
+    finally:
+        delete_case_by_internal_reference("PAT-CN-910")
