@@ -1,0 +1,2 @@
+class CaseAlreadyExistsError(Exception):
+    pass

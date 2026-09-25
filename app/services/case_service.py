@@ -2,10 +2,14 @@ from sqlalchemy.orm import Session
 
 from app.db.models.case import Case
 from app.domain.case_rules import derive_jurisdiction
+from app.domain.exceptions import CaseAlreadyExistsError
 from app.repositories import case_repository
 from app.schemas.case import CaseCreate
 
 def create_case(db: Session, case_data: CaseCreate) -> Case:
+    existing_case = case_repository.get_case_by_internal_reference(db, case_data.internal_reference)
+    if existing_case is not None:
+        raise CaseAlreadyExistsError(f"Case with internal reference {case_data.internal_reference} already exists")
     jurisdiction = derive_jurisdiction(case_data.internal_reference)
     case = Case(
         internal_reference=case_data.internal_reference,
