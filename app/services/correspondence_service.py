@@ -1,3 +1,4 @@
+import logging
 from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
@@ -6,6 +7,9 @@ from app.db.models.correspondence import Correspondence, ImportType
 from app.db.models.document import Document
 from app.repositories import correspondence_repository, document_repository
 from app.storage import local_storage
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -46,6 +50,9 @@ def import_direct_documents(
     except Exception:
         db.rollback()
         for storage_path in saved_paths:
-            local_storage.delete_file(storage_path)
+            try:
+                local_storage.delete_file(storage_path)
+            except OSError:
+                logger.exception("Failed to delete stored file during import cleanup: %s", storage_path)
         raise
     return correspondence

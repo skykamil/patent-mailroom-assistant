@@ -18,7 +18,14 @@ def save_file(content: bytes, original_filename: str) -> StoredFile:
     suffix = Path(original_filename).suffix
     stored_filename = uuid4().hex + suffix
     storage_path = UPLOAD_DIR / stored_filename
-    storage_path.write_bytes(content)
+    try:
+        storage_path.write_bytes(content)
+    except Exception:
+        try:
+            storage_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
     return StoredFile(str(storage_path), file_size, file_hash)
 
 def delete_file(storage_path: str) -> None:
