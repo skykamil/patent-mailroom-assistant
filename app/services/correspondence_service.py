@@ -3,8 +3,9 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
-from app.db.models.correspondence import Correspondence, ImportType
+from app.db.models.correspondence import Correspondence
 from app.db.models.document import Document
+from app.domain.correspondence import ImportType
 from app.repositories import correspondence_repository, document_repository
 from app.services import case_service
 from app.storage import local_storage

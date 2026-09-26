@@ -1,19 +1,14 @@
 from datetime import datetime
-from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, Enum, ForeignKey, func, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.domain.correspondence import ImportType
 
 if TYPE_CHECKING:
     from app.db.models.document import Document
-
-
-class ImportType(StrEnum):
-    EMAIL = "email"
-    DIRECT_UPLOAD = "direct_upload"
 
 
 class Correspondence(Base):

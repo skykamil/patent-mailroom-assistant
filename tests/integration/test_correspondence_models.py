@@ -1,5 +1,6 @@
-from app.db.models.correspondence import Correspondence, ImportType
+from app.db.models.correspondence import Correspondence
 from app.db.models.document import Document
+from app.domain.correspondence import ImportType
 from tests.integration.db import TestSessionLocal
 
 
