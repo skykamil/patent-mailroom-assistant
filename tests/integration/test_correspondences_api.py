@@ -61,7 +61,7 @@ def test_direct_upload_creates_correspondence_and_documents(tmp_path: Path, monk
         db.execute(statement)
         statement = delete(Correspondence).where(Correspondence.id == correspondence_id)
         db.execute(statement)
-        db.connection()
+        db.commit()
         db.close()
 
 
@@ -126,3 +126,39 @@ def test_direct_upload_assigns_existing_case(tmp_path: Path, monkeypatch):
         finally:
             db.close()
         delete_case_by_internal_reference("PAT-CN-920")
+
+
+def test_direct_upload_returns_422_for_too_long_filename(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(correspondence_service.local_storage, "UPLOAD_DIR", tmp_path)
+    files = [
+        (
+            "files",
+            ("a" * 252 + ".pdf", b"synthetic document", "application/pdf"),
+        ),
+    ]
+    response = client.post(
+        "/correspondences/direct-upload",
+        files=files,
+    )
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+    assert response.json()["detail"][0]["type"] == "string_too_long"
+    assert response.json()["detail"][0]["loc"] == ["original_filename"]
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_direct_upload_returns_422_for_too_long_mime_type(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(correspondence_service.local_storage, "UPLOAD_DIR", tmp_path)
+    files = [
+        (
+            "files",
+            ("Office_Action.pdf", b"synthetic document", "application/" + "a" * 89),
+        ),
+    ]
+    response = client.post(
+        "/correspondences/direct-upload",
+        files=files,
+    )
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+    assert response.json()["detail"][0]["type"] == "string_too_long"
+    assert response.json()["detail"][0]["loc"] == ["mime_type"]
+    assert list(tmp_path.iterdir()) == []

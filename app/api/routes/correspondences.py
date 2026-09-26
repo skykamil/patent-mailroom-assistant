@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_db
 from app.domain.exceptions import CaseNotFoundError
 from app.schemas.correspondence import CorrespondenceRead
+from app.schemas.document import DocumentUploadMetadata
 from app.services import correspondence_service
 from app.services.correspondence_service import IncomingDocument
 
@@ -23,11 +25,18 @@ def import_direct_documents(
 ):
     incoming_documents: list[IncomingDocument] = []
     for file in files:
+        try:
+            metadata = DocumentUploadMetadata(
+                original_filename=file.filename or "uploaded_file",
+                mime_type=file.content_type or "application/octet-stream"
+            )
+        except ValidationError as exc:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=exc.errors()) from exc
         content = file.file.read()
         incoming_document = IncomingDocument(
-            original_filename=file.filename or "uploaded_file",
+            original_filename=metadata.original_filename,
             content=content,
-            mime_type=file.content_type or "application/octet-stream",
+            mime_type=metadata.mime_type,
         )
         incoming_documents.append(incoming_document)
     try:
