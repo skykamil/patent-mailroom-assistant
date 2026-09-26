@@ -2,7 +2,7 @@
 
 An educational backend project for processing patent correspondence, built with Python, FastAPI, SQLAlchemy and PostgreSQL.
 
-The intended workflow is to import an email, extract information from its contents and attachments, and prepare proposed updates for human review. The current implementation covers the case creation, retrieval, partial update and deletion foundation. Email processing, AI analysis and approval workflows are not implemented yet.
+The intended workflow is to import an email, extract information from its contents and attachments, and prepare proposed updates for human review. The current implementation covers the case CRUD foundation, correspondence and document models, and local file storage. Email processing, AI analysis and approval workflows are not implemented yet.
 
 ## Current functionality
 
@@ -17,6 +17,7 @@ The intended workflow is to import an email, extract information from its conten
 - Prevent duplicate internal references and duplicate application numbers within the same jurisdiction.
 - Return HTTP `409` for supported uniqueness conflicts, including conflicts detected during database writes.
 - Store correspondence records and document metadata as the foundation for future email and direct-document imports.
+- Store document files in local filesystem storage with generated filenames, file size and SHA-256 metadata.
 - Manage database changes with Alembic migrations.
 
 
@@ -42,8 +43,9 @@ The database also includes a case relationship model with `direct_parent` and `p
 | `app/repositories/` | Database queries and adding records to the session |
 | `app/schemas/` | Request validation and response schemas |
 | `app/services/` | Case creation, retrieval, update and deletion, transaction handling and conflict translation |
+| `app/storage/` | Local filesystem storage and file cleanup |
 | `alembic/` | Database migrations |
-| `tests/unit/` | Reference rule and health endpoint tests |
+| `tests/unit/` | Reference rule, health endpoint and local storage tests |
 | `tests/integration/` | API and service tests using a separate PostgreSQL database |
 
 ## Local setup
@@ -197,7 +199,7 @@ Run the tests that do not require a running database:
 python -m pytest tests/unit -q
 ```
 
-Tests cover reference rules, request validation, case creation, retrieval, partial update and deletion, 404 handling, jurisdiction-scoped uniqueness, conflicts detected during database writes, and the Correspondence-to-Document relationship. The write-conflict tests bypass the preliminary lookup to exercise database constraint handling; they do not simulate concurrent requests.
+Tests cover reference rules, request validation, case creation, retrieval, partial update and deletion, 404 handling, jurisdiction-scoped uniqueness, conflicts detected during database writes, the Correspondence-to-Document relationship, and local file storage. The write-conflict tests bypass the preliminary lookup to exercise database constraint handling; they do not simulate concurrent requests.
 
 After adding migrations, apply them to both the application and test databases before running integration tests.
 

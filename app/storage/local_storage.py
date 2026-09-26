@@ -20,3 +20,7 @@ def save_file(content: bytes, original_filename: str) -> StoredFile:
     storage_path = UPLOAD_DIR / stored_filename
     storage_path.write_bytes(content)
     return StoredFile(str(storage_path), file_size, file_hash)
+
+def delete_file(storage_path: str) -> None:
+    path = Path(storage_path)
+    path.unlink(missing_ok=True)
