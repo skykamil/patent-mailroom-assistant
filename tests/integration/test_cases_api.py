@@ -270,6 +270,9 @@ def test_update_case_returns_409_for_duplicate_application_number():
             },
         )
         assert update_response.status_code == status.HTTP_409_CONFLICT
+        get_response = client.get(f"/cases/{second_case_id}")
+        assert get_response.status_code == status.HTTP_200_OK
+        assert get_response.json()["application_number"] == "888999000"
     finally:
         delete_case_by_internal_reference("PAT-CN-914")
         delete_case_by_internal_reference("PAT-CN-915")
@@ -343,3 +346,12 @@ def test_delete_case_returns_409_when_case_is_in_use():
                 db.close()
         delete_case_by_internal_reference("PAT-CN-917")
         delete_case_by_internal_reference("PAT-CN-918")
+
+def test_update_case_returns_422_for_unknown_field():
+    response = client.patch(
+        "/cases/999999",
+        json={
+            "internal_reference": "PAT-CN-999"
+        },
+    )
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT

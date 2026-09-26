@@ -35,6 +35,7 @@ class CaseRead(BaseModel):
     agent_reference: str | None = None
 
 class CaseUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     application_number: str | None = Field(default=None, max_length=50)
     application_date: date | None = None
     publication_number: str | None = Field(default=None, max_length=50)
