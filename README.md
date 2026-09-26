@@ -2,7 +2,7 @@
 
 An educational backend project for processing patent correspondence, built with Python, FastAPI, SQLAlchemy and PostgreSQL.
 
-The intended workflow is to import an email, extract information from its contents and attachments, and prepare proposed updates for human review. The current implementation covers the case CRUD foundation, correspondence and document models, local file storage, and service-level direct-document import. Email processing, AI analysis and approval workflows are not implemented yet.
+The intended workflow is to import an email, extract information from its contents and attachments, and prepare proposed updates for human review. The current implementation covers the case CRUD foundation, correspondence and document models, local file storage, and direct-document import through the HTTP API. Email processing, AI analysis and approval workflows are not implemented yet.
 
 ## Current functionality
 
@@ -16,7 +16,7 @@ The intended workflow is to import an email, extract information from its conten
 - Store optional application, publication, grant and agent reference data.
 - Prevent duplicate internal references and duplicate application numbers within the same jurisdiction.
 - Return HTTP `409` for supported uniqueness conflicts, including conflicts detected during database writes.
-- Import one or more direct-upload documents at the service layer, creating a Correspondence record and related Document records.
+- Import one or more documents through the direct-upload API, creating a Correspondence record and related Document records.
 - Store document files in local filesystem storage with generated filenames, file size and SHA-256 metadata.
 - Roll back database changes and remove stored files if a direct-document import fails.
 - Manage database changes with Alembic migrations.
@@ -114,6 +114,7 @@ The current settings do not automatically load a `.env` file. Use shell environm
 | `GET` | `/cases/{case_id}` | Retrieve a patent case by database ID |
 | `PATCH` | `/cases/{case_id}` | Partially update a patent case |
 | `DELETE` | `/cases/{case_id}` | Delete a patent case |
+| `POST` | `/correspondences/direct-upload` | Import one or more documents and create a Correspondence record |
 
 ### Create a case
 
@@ -170,6 +171,22 @@ curl -i -X DELETE http://127.0.0.1:8000/cases/1
 
 A case that is not in use is deleted with `204 No Content`. If the case is referenced by another database record, the API returns `409 Conflict`.
 
+### Direct document upload
+
+```bash
+curl -i -X POST http://127.0.0.1:8000/correspondences/direct-upload \
+  -F 'files=@Office_Action.pdf' \
+  -F 'files=@Search_Report.pdf'
+```
+
+To associate the imported documents with an existing case, include its database ID as a form field:
+
+```bash
+curl -i -X POST http://127.0.0.1:8000/correspondences/direct-upload \
+  -F 'files=@Office_Action.pdf' \
+  -F 'case_id=1'
+```
+
 ## Tests
 
 The integration tests use a separate database, `patent_mailroom_test`, on the same local PostgreSQL server. Docker Compose does not create this database automatically.
@@ -200,7 +217,7 @@ Run the tests that do not require a running database:
 python -m pytest tests/unit -q
 ```
 
-Tests cover reference rules, request validation, case creation, retrieval, partial update and deletion, 404 handling, jurisdiction-scoped uniqueness, conflicts detected during database writes, the Correspondence-to-Document relationship, local file storage, direct-document import, and rollback/cleanup behavior when an import fails.
+Tests cover reference rules, request validation, case creation, retrieval, partial update and deletion, 404 handling, jurisdiction-scoped uniqueness, conflicts detected during database writes, the Correspondence-to-Document relationship, local file storage, direct-document import, direct-upload API behavior, and rollback/cleanup behavior when an import fails.
 
 After adding migrations, apply them to both the application and test databases before running integration tests.
 
