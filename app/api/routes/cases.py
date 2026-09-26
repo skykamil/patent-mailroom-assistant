@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_db
 from app.domain.exceptions import ApplicationNumberAlreadyExistsError, CaseAlreadyExistsError, CaseNotFoundError
-from app.schemas.case import CaseCreate, CaseRead
+from app.schemas.case import CaseCreate, CaseRead, CaseUpdate
 from app.services import case_service
 
 router = APIRouter()
@@ -30,3 +30,15 @@ def get_case(case_id: int, db: Session = Depends(get_db)):
         return case_service.get_case_by_id(db, case_id)
     except CaseNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+
+@router.patch(
+    "/cases/{case_id}",
+    response_model=CaseRead
+)
+def update_case(case_id: int, case_data: CaseUpdate, db: Session = Depends(get_db)):
+    try:
+        return case_service.update_case(db, case_id, case_data)
+    except CaseNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except ApplicationNumberAlreadyExistsError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))

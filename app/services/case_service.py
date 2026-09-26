@@ -6,7 +6,7 @@ from app.db.models.case import Case
 from app.domain.case_rules import derive_jurisdiction
 from app.domain.exceptions import ApplicationNumberAlreadyExistsError, CaseAlreadyExistsError, CaseNotFoundError
 from app.repositories import case_repository
-from app.schemas.case import CaseCreate
+from app.schemas.case import CaseCreate, CaseUpdate
 
 def create_case(db: Session, case_data: CaseCreate) -> Case:
     existing_case = case_repository.get_case_by_internal_reference(db, case_data.internal_reference)
@@ -47,4 +47,24 @@ def get_case_by_id(db: Session, case_id: int) -> Case:
     case = case_repository.get_case_by_id(db, case_id)
     if case is None:
         raise CaseNotFoundError(f"Case with id {case_id} not found")
+    return case
+
+def update_case(db: Session, case_id: int, case_data: CaseUpdate) -> Case:
+    case = get_case_by_id(db, case_id)
+    update_data = case_data.model_dump(exclude_unset=True)
+    for field_name, value in update_data.items():
+        setattr(case, field_name, value)
+    attempted_application_number = case.application_number
+    jurisdiction = case.jurisdiction
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        if (
+            isinstance(exc.orig, UniqueViolation)
+            and exc.orig.diag.constraint_name == "uq_cases_jurisdiction_application_number"
+        ):
+            raise ApplicationNumberAlreadyExistsError(f"Application number {attempted_application_number} already exists in jurisdiction {jurisdiction}") from exc
+        raise
+    db.refresh(case)
     return case

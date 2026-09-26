@@ -2,18 +2,20 @@
 
 An educational backend project for processing patent correspondence, built with Python, FastAPI, SQLAlchemy and PostgreSQL.
 
-The intended workflow is to import an email, extract information from its contents and attachments, and prepare proposed updates for human review. The current implementation covers the case creation and retrieval foundation. Email processing, AI analysis and approval workflows are not implemented yet.
+The intended workflow is to import an email, extract information from its contents and attachments, and prepare proposed updates for human review. The current implementation covers the case creation, retrieval and partial update foundation. Email processing, AI analysis and approval workflows are not implemented yet.
 
 ## Current functionality
 
 - Create patent cases through a REST API.
 - Retrieve a patent case by its database ID.
+- Partially update case data while leaving unspecified fields unchanged.
 - Derive the jurisdiction from the internal reference, for example `PAT-CN-001` → `CN`.
 - Validate the internal reference format and text field lengths.
 - Store optional application, publication, grant and agent reference data.
 - Prevent duplicate internal references and duplicate application numbers within the same jurisdiction.
 - Return HTTP `409` for supported uniqueness conflicts, including conflicts detected during database writes.
 - Manage database changes with Alembic migrations.
+
 
 The database also includes a case relationship model with `direct_parent` and `priority` relationship types. Relationship management is not exposed through the API yet.
 
@@ -36,7 +38,7 @@ The database also includes a case relationship model with `direct_parent` and `p
 | `app/domain/` | Reference validation, jurisdiction rules and domain exceptions |
 | `app/repositories/` | Database queries and adding records to the session |
 | `app/schemas/` | Request validation and response schemas |
-| `app/services/` | Case creation and retrieval, transaction handling and conflict translation |
+| `app/services/` | Case creation, retrieval and update, transaction handling and conflict translation |
 | `alembic/` | Database migrations |
 | `tests/unit/` | Reference rule and health endpoint tests |
 | `tests/integration/` | API and service tests using a separate PostgreSQL database |
@@ -104,6 +106,7 @@ The current settings do not automatically load a `.env` file. Use shell environm
 | `GET` | `/health` | Basic API health check |
 | `POST` | `/cases` | Create a patent case |
 | `GET` | `/cases/{case_id}` | Retrieve a patent case by database ID |
+| `PATCH` | `/cases/{case_id}` | Partially update a patent case |
 
 ### Create a case
 
@@ -140,6 +143,18 @@ If the case exists, the API returns `200 OK` with the case data.
 
 If the case does not exist, the API returns `404 Not Found`.
 
+### Update a case
+
+```bash
+curl -i -X PATCH http://127.0.0.1:8000/cases/1 \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "agent_reference": "UPDATED-REF"
+  }'
+```
+
+Only fields included in the request are updated. Sending an optional field as `null` clears that field.
+
 ## Tests
 
 The integration tests use a separate database, `patent_mailroom_test`, on the same local PostgreSQL server. Docker Compose does not create this database automatically.
@@ -170,7 +185,7 @@ Run the tests that do not require a running database:
 python -m pytest tests/unit -q
 ```
 
-Tests cover reference rules, request validation, case creation and retrieval, 404 handling, jurisdiction-scoped uniqueness and conflicts detected during database writes. The write-conflict tests bypass the preliminary lookup to exercise database constraint handling; they do not simulate concurrent requests.
+Tests cover reference rules, request validation, case creation, retrieval and partial update, 404 handling, jurisdiction-scoped uniqueness and conflicts detected during database writes. The write-conflict tests bypass the preliminary lookup to exercise database constraint handling; they do not simulate concurrent requests.
 
 After adding migrations, apply them to both the application and test databases before running integration tests.
 

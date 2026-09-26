@@ -33,3 +33,12 @@ class CaseRead(BaseModel):
     grant_number: str | None = None
     grant_date: date | None = None
     agent_reference: str | None = None
+
+class CaseUpdate(BaseModel):
+    application_number: str | None = Field(default=None, max_length=50)
+    application_date: date | None = None
+    publication_number: str | None = Field(default=None, max_length=50)
+    publication_date: date | None = None
+    grant_number: str | None = Field(default=None, max_length=50)
+    grant_date: date | None = None
+    agent_reference: str | None = Field(default=None, max_length=50)

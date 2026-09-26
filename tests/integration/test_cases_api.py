@@ -185,3 +185,90 @@ def test_get_case_by_id_returns_404_when_case_does_not_exist():
     response = client.get("/cases/999999")
     assert response.status_code == status.HTTP_404_NOT_FOUND
     assert response.json()["detail"] == "Case with id 999999 not found"
+
+def test_update_case_changes_only_provided_fields():
+    delete_case_by_internal_reference("PAT-CN-912")
+    try:
+        response = client.post(
+            "/cases",
+            json={
+                "internal_reference": "PAT-CN-912",
+                "application_number": "111222333",
+                "agent_reference": "000111"
+            },
+        )
+        case_id = response.json()["id"]
+        update_response = client.patch(
+            f"/cases/{case_id}",
+            json={
+                "agent_reference": "UPDATED-REF"
+            },
+        )
+        assert update_response.status_code == status.HTTP_200_OK
+        response_data = update_response.json()
+        assert response_data["agent_reference"] == "UPDATED-REF"
+        assert response_data["application_number"] == "111222333"
+    finally:
+        delete_case_by_internal_reference("PAT-CN-912")
+
+def test_update_case_allows_clearing_optional_field():
+    delete_case_by_internal_reference("PAT-CN-913")
+    try:
+        response = client.post(
+            "/cases",
+            json={
+                "internal_reference": "PAT-CN-913",
+                "agent_reference": "TO-BE-CLEARED"
+            },
+        )
+        case_id = response.json()["id"]
+        update_response = client.patch(
+            f"/cases/{case_id}",
+            json={
+                "agent_reference": None
+            },
+        )
+        assert update_response.status_code == status.HTTP_200_OK
+        assert update_response.json()["agent_reference"] is None
+    finally:
+        delete_case_by_internal_reference("PAT-CN-913")
+
+def test_update_case_returns_404_when_case_does_not_exist():
+    response = client.patch(
+        "/cases/999999",
+        json={
+            "agent_reference": "ANY"
+        },
+    )
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+    assert response.json()["detail"] == "Case with id 999999 not found"
+
+def test_update_case_returns_409_for_duplicate_application_number():
+    delete_case_by_internal_reference("PAT-CN-914")
+    delete_case_by_internal_reference("PAT-CN-915")
+    try:
+        first_response = client.post(
+            "/cases",
+            json={
+                "internal_reference": "PAT-CN-914",
+                "application_number": "555666777"
+            },
+        )
+        second_response = client.post(
+            "/cases",
+            json={
+                "internal_reference": "PAT-CN-915",
+                "application_number": "888999000"
+            },
+        )
+        second_case_id = second_response.json()["id"]
+        update_response = client.patch(
+            f"/cases/{second_case_id}",
+            json={
+                "application_number": "555666777"
+            },
+        )
+        assert update_response.status_code == status.HTTP_409_CONFLICT
+    finally:
+        delete_case_by_internal_reference("PAT-CN-914")
+        delete_case_by_internal_reference("PAT-CN-915")
