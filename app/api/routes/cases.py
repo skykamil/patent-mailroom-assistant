@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_db
-from app.domain.exceptions import ApplicationNumberAlreadyExistsError, CaseAlreadyExistsError, CaseNotFoundError
+from app.domain.exceptions import ApplicationNumberAlreadyExistsError, CaseAlreadyExistsError, CaseInUseError, CaseNotFoundError
 from app.schemas.case import CaseCreate, CaseRead, CaseUpdate
 from app.services import case_service
 
@@ -41,4 +41,16 @@ def update_case(case_id: int, case_data: CaseUpdate, db: Session = Depends(get_d
     except CaseNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     except ApplicationNumberAlreadyExistsError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+
+@router.delete(
+    "/cases/{case_id}",
+    status_code=status.HTTP_204_NO_CONTENT
+)
+def delete_case(case_id: int, db: Session = Depends(get_db)):
+    try:
+        case_service.delete_case(db, case_id)
+    except CaseNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except CaseInUseError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))

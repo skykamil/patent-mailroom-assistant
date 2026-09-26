@@ -6,3 +6,6 @@ class CaseAlreadyExistsError(Exception):
 
 class CaseNotFoundError(Exception):
     pass
+
+class CaseInUseError(Exception):
+    pass

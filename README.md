@@ -2,13 +2,15 @@
 
 An educational backend project for processing patent correspondence, built with Python, FastAPI, SQLAlchemy and PostgreSQL.
 
-The intended workflow is to import an email, extract information from its contents and attachments, and prepare proposed updates for human review. The current implementation covers the case creation, retrieval and partial update foundation. Email processing, AI analysis and approval workflows are not implemented yet.
+The intended workflow is to import an email, extract information from its contents and attachments, and prepare proposed updates for human review. The current implementation covers the case creation, retrieval, partial update and deletion foundation. Email processing, AI analysis and approval workflows are not implemented yet.
 
 ## Current functionality
 
 - Create patent cases through a REST API.
 - Retrieve a patent case by its database ID.
 - Partially update case data while leaving unspecified fields unchanged.
+- Delete cases that are not referenced by related records.
+- Prevent deletion of cases that are still in use.
 - Derive the jurisdiction from the internal reference, for example `PAT-CN-001` → `CN`.
 - Validate the internal reference format and text field lengths.
 - Store optional application, publication, grant and agent reference data.
@@ -38,7 +40,7 @@ The database also includes a case relationship model with `direct_parent` and `p
 | `app/domain/` | Reference validation, jurisdiction rules and domain exceptions |
 | `app/repositories/` | Database queries and adding records to the session |
 | `app/schemas/` | Request validation and response schemas |
-| `app/services/` | Case creation, retrieval and update, transaction handling and conflict translation |
+| `app/services/` | Case creation, retrieval, update and deletion, transaction handling and conflict translation |
 | `alembic/` | Database migrations |
 | `tests/unit/` | Reference rule and health endpoint tests |
 | `tests/integration/` | API and service tests using a separate PostgreSQL database |
@@ -107,6 +109,7 @@ The current settings do not automatically load a `.env` file. Use shell environm
 | `POST` | `/cases` | Create a patent case |
 | `GET` | `/cases/{case_id}` | Retrieve a patent case by database ID |
 | `PATCH` | `/cases/{case_id}` | Partially update a patent case |
+| `DELETE` | `/cases/{case_id}` | Delete a patent case |
 
 ### Create a case
 
@@ -128,7 +131,7 @@ This example uses synthetic data. Only `internal_reference` is required. The jur
 | `200 OK` | Case retrieved successfully |
 | `201 Created` | Case created; the response includes its database ID and jurisdiction |
 | `404 Not Found` | Case with the requested ID does not exist |
-| `409 Conflict` | Internal reference already exists, or the application number already exists in the same jurisdiction |
+| `409 Conflict` | A uniqueness conflict occurred, or the case cannot be deleted because it is in use |
 | `422 Unprocessable Content` | Request validation failed |
 
 Repeating the example without changing its identifiers returns `409`. The same application number can be used in different jurisdictions. Cases may also omit the application number.
@@ -154,6 +157,14 @@ curl -i -X PATCH http://127.0.0.1:8000/cases/1 \
 ```
 
 Only fields included in the request are updated. Sending an optional field as `null` clears that field.
+
+### Delete a case
+
+```bash
+curl -i -X DELETE http://127.0.0.1:8000/cases/1
+```
+
+A case that is not in use is deleted with `204 No Content`. If the case is referenced by another database record, the API returns `409 Conflict`.
 
 ## Tests
 
@@ -185,7 +196,7 @@ Run the tests that do not require a running database:
 python -m pytest tests/unit -q
 ```
 
-Tests cover reference rules, request validation, case creation, retrieval and partial update, 404 handling, jurisdiction-scoped uniqueness and conflicts detected during database writes. The write-conflict tests bypass the preliminary lookup to exercise database constraint handling; they do not simulate concurrent requests.
+Tests cover reference rules, request validation, case creation, retrieval, partial update and deletion, 404 handling, jurisdiction-scoped uniqueness and conflicts detected during database writes. The write-conflict tests bypass the preliminary lookup to exercise database constraint handling; they do not simulate concurrent requests.
 
 After adding migrations, apply them to both the application and test databases before running integration tests.
 

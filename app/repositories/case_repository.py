@@ -14,3 +14,6 @@ def get_case_by_internal_reference(db: Session, internal_reference: str) -> Case
 def get_case_by_id(db: Session, case_id: int) -> Case | None:
     statement = select(Case).where(Case.id == case_id)
     return db.scalar(statement)
+
+def delete_case(db: Session, case: Case) -> None:
+    db.delete(case)

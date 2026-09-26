@@ -5,6 +5,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.api.dependencies import get_db
 from app.db.models.case import Case
+from app.db.models.case_relationship import CaseRelationship, CaseRelationshipType
 from app.main import app
 from app.services import case_service
 
@@ -272,3 +273,73 @@ def test_update_case_returns_409_for_duplicate_application_number():
     finally:
         delete_case_by_internal_reference("PAT-CN-914")
         delete_case_by_internal_reference("PAT-CN-915")
+
+def test_delete_case_removes_case():
+    delete_case_by_internal_reference("PAT-CN-916")
+    try:
+        create_response = client.post(
+            "/cases",
+            json={
+                "internal_reference": "PAT-CN-916"
+            },
+        )
+        case_id = create_response.json()["id"]
+        delete_response = client.delete(
+            f"/cases/{case_id}"
+        )
+        assert delete_response.status_code == status.HTTP_204_NO_CONTENT
+        get_response = client.get(f"/cases/{case_id}")
+        assert get_response.status_code == status.HTTP_404_NOT_FOUND
+    finally:
+        delete_case_by_internal_reference("PAT-CN-916")
+
+def test_delete_case_returns_404_when_case_does_not_exist():
+    response = client.delete("/cases/999999")
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+    assert response.json()["detail"] == "Case with id 999999 not found"
+
+def test_delete_case_returns_409_when_case_is_in_use():
+    delete_case_by_internal_reference("PAT-CN-917")
+    delete_case_by_internal_reference("PAT-CN-918")
+    relationship_id = None
+    try:
+        first_response = client.post(
+            "/cases",
+            json={
+                "internal_reference": "PAT-CN-917"
+            },
+        )
+        second_response = client.post(
+            "/cases",
+            json={
+                "internal_reference": "PAT-CN-918"
+            }
+        )
+        first_case_id = first_response.json()["id"]
+        second_case_id = second_response.json()["id"]
+        db = TestSessionLocal()
+        try:
+            relationship = CaseRelationship(
+                source_case_id=first_case_id,
+                target_case_id=second_case_id,
+                relationship_type=CaseRelationshipType.DIRECT_PARENT
+            )
+            db.add(relationship)
+            db.commit()
+            relationship_id = relationship.id
+        finally:
+            db.close()
+        delete_response = client.delete(f"/cases/{first_case_id}")
+        assert delete_response.status_code == status.HTTP_409_CONFLICT
+        assert delete_response.json()["detail"] == (f"Case with id {first_case_id} cannot be deleted because it is in use")
+    finally:
+        if relationship_id is not None:
+            db = TestSessionLocal()
+            try:
+                statement = delete(CaseRelationship).where(CaseRelationship.id == relationship_id)
+                db.execute(statement)
+                db.commit()
+            finally:
+                db.close()
+        delete_case_by_internal_reference("PAT-CN-917")
+        delete_case_by_internal_reference("PAT-CN-918")

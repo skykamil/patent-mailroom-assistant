@@ -1,10 +1,10 @@
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from psycopg.errors import UniqueViolation
+from psycopg.errors import ForeignKeyViolation, UniqueViolation
 
 from app.db.models.case import Case
 from app.domain.case_rules import derive_jurisdiction
-from app.domain.exceptions import ApplicationNumberAlreadyExistsError, CaseAlreadyExistsError, CaseNotFoundError
+from app.domain.exceptions import ApplicationNumberAlreadyExistsError, CaseAlreadyExistsError, CaseInUseError,  CaseNotFoundError
 from app.repositories import case_repository
 from app.schemas.case import CaseCreate, CaseUpdate
 
@@ -68,3 +68,14 @@ def update_case(db: Session, case_id: int, case_data: CaseUpdate) -> Case:
         raise
     db.refresh(case)
     return case
+
+def delete_case(db: Session, case_id: int) -> None:
+    case = get_case_by_id(db, case_id)
+    case_repository.delete_case(db, case)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        if isinstance(exc.orig, ForeignKeyViolation):
+            raise CaseInUseError(f"Case with id {case_id} cannot be deleted because it is in use") from exc
+        raise
