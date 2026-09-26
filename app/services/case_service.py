@@ -8,6 +8,7 @@ from app.domain.exceptions import ApplicationNumberAlreadyExistsError, CaseAlrea
 from app.repositories import case_repository
 from app.schemas.case import CaseCreate, CaseUpdate
 
+
 def create_case(db: Session, case_data: CaseCreate) -> Case:
     existing_case = case_repository.get_case_by_internal_reference(db, case_data.internal_reference)
     if existing_case is not None:
@@ -43,11 +44,13 @@ def create_case(db: Session, case_data: CaseCreate) -> Case:
     db.refresh(created_case)
     return created_case
 
+
 def get_case_by_id(db: Session, case_id: int) -> Case:
     case = case_repository.get_case_by_id(db, case_id)
     if case is None:
         raise CaseNotFoundError(f"Case with id {case_id} not found")
     return case
+
 
 def update_case(db: Session, case_id: int, case_data: CaseUpdate) -> Case:
     case = get_case_by_id(db, case_id)
@@ -68,6 +71,7 @@ def update_case(db: Session, case_id: int, case_data: CaseUpdate) -> Case:
         raise
     db.refresh(case)
     return case
+
 
 def delete_case(db: Session, case_id: int) -> None:
     case = get_case_by_id(db, case_id)

@@ -10,9 +10,11 @@ from app.db.base import Base
 if TYPE_CHECKING:
     from app.db.models.document import Document
 
+
 class ImportType(StrEnum):
     EMAIL = "email"
     DIRECT_UPLOAD = "direct_upload"
+
 
 class Correspondence(Base):
     __tablename__ = "correspondences"

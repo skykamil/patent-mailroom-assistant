@@ -5,6 +5,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 
+
 class Case(Base):
     __tablename__ = "cases"
     __table_args__ = (

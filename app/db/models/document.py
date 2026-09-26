@@ -8,6 +8,7 @@ from app.db.base import Base
 if TYPE_CHECKING:
     from app.db.models.correspondence import Correspondence
 
+
 class Document(Base):
     __tablename__ = "documents"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)

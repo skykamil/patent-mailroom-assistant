@@ -4,6 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.domain.case_rules import validate_internal_reference_format
 
+
 class CaseCreate(BaseModel):
     internal_reference: str = Field(max_length=50)
 
@@ -21,6 +22,7 @@ class CaseCreate(BaseModel):
     grant_date: date | None = None
     agent_reference: str | None = Field(default=None, max_length=50)
 
+
 class CaseRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -33,6 +35,7 @@ class CaseRead(BaseModel):
     grant_number: str | None = None
     grant_date: date | None = None
     agent_reference: str | None = None
+
 
 class CaseUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")

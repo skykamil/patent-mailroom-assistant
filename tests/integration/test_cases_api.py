@@ -8,6 +8,7 @@ from app.main import app
 from app.services import case_service
 from tests.integration.db import TestSessionLocal, delete_case_by_internal_reference
 
+
 def override_get_db():
     db = TestSessionLocal()
     try:
@@ -15,9 +16,12 @@ def override_get_db():
     finally:
         db.close()
 
+
 app.dependency_overrides[get_db] = override_get_db
 
+
 client = TestClient(app)
+
 
 def test_create_case():
     delete_case_by_internal_reference("PAT-CN-900")
@@ -37,6 +41,7 @@ def test_create_case():
         assert response_data["jurisdiction"] == "CN"
     finally:
         delete_case_by_internal_reference("PAT-CN-900")
+
 
 def test_create_case_returns_409_when_internal_reference_exists():
     delete_case_by_internal_reference("PAT-CN-901")
@@ -60,6 +65,7 @@ def test_create_case_returns_409_when_internal_reference_exists():
     finally:
         delete_case_by_internal_reference("PAT-CN-901")
 
+
 def test_create_case_returns_422_for_invalid_internal_reference():
     response = client.post(
         "/cases",
@@ -69,6 +75,7 @@ def test_create_case_returns_422_for_invalid_internal_reference():
     )
     assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
+
 def test_create_case_returns_422_when_internal_reference_is_too_long():
     response = client.post(
         "/cases",
@@ -77,6 +84,7 @@ def test_create_case_returns_422_when_internal_reference_is_too_long():
         },
     )
     assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
 
 def test_create_case_allows_same_application_number_in_different_jurisdictions():
     delete_case_by_internal_reference("PAT-CN-903")
@@ -102,6 +110,7 @@ def test_create_case_allows_same_application_number_in_different_jurisdictions()
         delete_case_by_internal_reference("PAT-CN-903")
         delete_case_by_internal_reference("PAT-EP-904")
 
+
 def test_create_case_returns_409_for_duplicate_application_number_in_same_jurisdiction():
     delete_case_by_internal_reference("PAT-CN-907")
     delete_case_by_internal_reference("PAT-CN-908")
@@ -125,6 +134,7 @@ def test_create_case_returns_409_for_duplicate_application_number_in_same_jurisd
     finally:
         delete_case_by_internal_reference("PAT-CN-907")
         delete_case_by_internal_reference("PAT-CN-908")
+
 
 def test_create_case_returns_409_when_internal_reference_conflict_occurs_at_database_write(monkeypatch):
     monkeypatch.setattr(
@@ -151,6 +161,7 @@ def test_create_case_returns_409_when_internal_reference_conflict_occurs_at_data
     finally:
         delete_case_by_internal_reference("PAT-CN-910")
 
+
 def test_get_case_by_id_returns_case():
     delete_case_by_internal_reference("PAT-CN-911")
     try:
@@ -167,10 +178,12 @@ def test_get_case_by_id_returns_case():
     finally:
         delete_case_by_internal_reference("PAT-CN-911")
 
+
 def test_get_case_by_id_returns_404_when_case_does_not_exist():
     response = client.get("/cases/999999")
     assert response.status_code == status.HTTP_404_NOT_FOUND
     assert response.json()["detail"] == "Case with id 999999 not found"
+
 
 def test_update_case_changes_only_provided_fields():
     delete_case_by_internal_reference("PAT-CN-912")
@@ -197,6 +210,7 @@ def test_update_case_changes_only_provided_fields():
     finally:
         delete_case_by_internal_reference("PAT-CN-912")
 
+
 def test_update_case_allows_clearing_optional_field():
     delete_case_by_internal_reference("PAT-CN-913")
     try:
@@ -219,6 +233,7 @@ def test_update_case_allows_clearing_optional_field():
     finally:
         delete_case_by_internal_reference("PAT-CN-913")
 
+
 def test_update_case_returns_404_when_case_does_not_exist():
     response = client.patch(
         "/cases/999999",
@@ -228,6 +243,7 @@ def test_update_case_returns_404_when_case_does_not_exist():
     )
     assert response.status_code == status.HTTP_404_NOT_FOUND
     assert response.json()["detail"] == "Case with id 999999 not found"
+
 
 def test_update_case_returns_409_for_duplicate_application_number():
     delete_case_by_internal_reference("PAT-CN-914")
@@ -262,6 +278,7 @@ def test_update_case_returns_409_for_duplicate_application_number():
         delete_case_by_internal_reference("PAT-CN-914")
         delete_case_by_internal_reference("PAT-CN-915")
 
+
 def test_delete_case_removes_case():
     delete_case_by_internal_reference("PAT-CN-916")
     try:
@@ -281,10 +298,12 @@ def test_delete_case_removes_case():
     finally:
         delete_case_by_internal_reference("PAT-CN-916")
 
+
 def test_delete_case_returns_404_when_case_does_not_exist():
     response = client.delete("/cases/999999")
     assert response.status_code == status.HTTP_404_NOT_FOUND
     assert response.json()["detail"] == "Case with id 999999 not found"
+
 
 def test_delete_case_returns_409_when_case_is_in_use():
     delete_case_by_internal_reference("PAT-CN-917")
@@ -331,6 +350,7 @@ def test_delete_case_returns_409_when_case_is_in_use():
                 db.close()
         delete_case_by_internal_reference("PAT-CN-917")
         delete_case_by_internal_reference("PAT-CN-918")
+
 
 def test_update_case_returns_422_for_unknown_field():
     response = client.patch(

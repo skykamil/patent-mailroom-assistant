@@ -5,6 +5,7 @@ from app.schemas.case import CaseCreate
 from app.services import case_service
 from tests.integration.db import TestSessionLocal, delete_case_by_internal_reference
 
+
 def test_create_case_raises_application_number_already_exists_error_for_duplicate_application_number_in_same_jurisdiction():
     db = TestSessionLocal()
     delete_case_by_internal_reference("PAT-CN-905")
@@ -25,6 +26,7 @@ def test_create_case_raises_application_number_already_exists_error_for_duplicat
         db.close()
         delete_case_by_internal_reference("PAT-CN-905")
         delete_case_by_internal_reference("PAT-CN-906")
+
 
 def test_duplicate_internal_reference_conflict_at_database_write(monkeypatch):
     monkeypatch.setattr(

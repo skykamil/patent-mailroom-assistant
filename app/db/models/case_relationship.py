@@ -5,9 +5,11 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 
+
 class CaseRelationshipType(StrEnum):
     DIRECT_PARENT = "direct_parent"
     PRIORITY = "priority"
+
 
 class CaseRelationship(Base):
     __tablename__ = "case_relationships"

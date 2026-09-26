@@ -2,6 +2,7 @@ from app.db.models.correspondence import Correspondence, ImportType
 from app.db.models.document import Document
 from tests.integration.db import TestSessionLocal
 
+
 def test_correspondence_has_documents():
     db = TestSessionLocal()
     try:

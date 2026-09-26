@@ -6,7 +6,9 @@ from app.domain.exceptions import ApplicationNumberAlreadyExistsError, CaseAlrea
 from app.schemas.case import CaseCreate, CaseRead, CaseUpdate
 from app.services import case_service
 
+
 router = APIRouter()
+
 
 @router.post(
     "/cases",
@@ -21,6 +23,7 @@ def create_case(case_data: CaseCreate, db: Session = Depends(get_db)):
     except CaseAlreadyExistsError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
 
+
 @router.get(
     "/cases/{case_id}",
     response_model=CaseRead
@@ -30,6 +33,7 @@ def get_case(case_id: int, db: Session = Depends(get_db)):
         return case_service.get_case_by_id(db, case_id)
     except CaseNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+
 
 @router.patch(
     "/cases/{case_id}",
@@ -42,6 +46,7 @@ def update_case(case_id: int, case_data: CaseUpdate, db: Session = Depends(get_d
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     except ApplicationNumberAlreadyExistsError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+
 
 @router.delete(
     "/cases/{case_id}",
