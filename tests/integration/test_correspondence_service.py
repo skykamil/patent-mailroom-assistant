@@ -3,8 +3,10 @@ from pathlib import Path
 import pytest
 from sqlalchemy import func, select
 
+from app.db.models.case import Case
 from app.db.models.correspondence import Correspondence
 from app.db.models.document import Document
+from app.domain.exceptions import CaseNotFoundError
 from app.services import correspondence_service
 from app.services.correspondence_service import IncomingDocument
 from tests.integration.db import TestSessionLocal
@@ -115,3 +117,25 @@ def test_import_cleanup_continues_when_file_deletion_fails(tmp_path: Path, monke
         )
     assert len(delete_attempts) == 2
     assert "synthetic cleanup failure" in caplog.text
+
+
+def test_import_direct_documents_missing_case(tmp_path: Path, monkeypatch):
+    db = TestSessionLocal()
+    try:
+        monkeypatch.setattr(correspondence_service.local_storage, "UPLOAD_DIR", tmp_path)
+        document = IncomingDocument(
+            original_filename="Office_Action.pdf",
+            content=b"synthetic office action",
+            mime_type="application/pdf",
+        )
+        max_case_id = db.scalar(select(func.max(Case.id))) or 0
+        missing_case_id = max_case_id + 1
+        with pytest.raises(CaseNotFoundError):
+            correspondence_service.import_direct_documents(
+                db=db,
+                documents=[document],
+                case_id=missing_case_id,
+            )
+        assert list(tmp_path.iterdir()) == []
+    finally:
+        db.close()

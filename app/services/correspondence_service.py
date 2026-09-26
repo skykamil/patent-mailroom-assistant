@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.db.models.correspondence import Correspondence, ImportType
 from app.db.models.document import Document
 from app.repositories import correspondence_repository, document_repository
+from app.services import case_service
 from app.storage import local_storage
 
 
@@ -26,6 +27,8 @@ def import_direct_documents(
 ) -> Correspondence:
     saved_paths: list[str] = []
     try:
+        if case_id is not None:
+            case_service.get_case_by_id(db, case_id)
         correspondence = Correspondence(
             case_id=case_id,
             import_type=ImportType.DIRECT_UPLOAD,
