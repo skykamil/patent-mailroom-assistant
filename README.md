@@ -16,6 +16,7 @@ The intended workflow is to import an email, extract information from its conten
 - Store optional application, publication, grant and agent reference data.
 - Prevent duplicate internal references and duplicate application numbers within the same jurisdiction.
 - Return HTTP `409` for supported uniqueness conflicts, including conflicts detected during database writes.
+- Store correspondence records and document metadata as the foundation for future email and direct-document imports.
 - Manage database changes with Alembic migrations.
 
 
@@ -182,7 +183,7 @@ If the database already exists, skip that command. Apply migrations to it:
 DATABASE_URL='postgresql+psycopg://patent_mailroom:patent_mailroom@localhost:5432/patent_mailroom_test' alembic upgrade head
 ```
 
-This override applies only to that migration command. The integration tests currently define their own fixed test database URL in `tests/integration/test_cases_api.py`.
+This override applies only to that migration command. The integration tests currently define their own fixed test database URL in `tests/integration/db.py`.
 
 Run the full suite:
 
@@ -196,7 +197,7 @@ Run the tests that do not require a running database:
 python -m pytest tests/unit -q
 ```
 
-Tests cover reference rules, request validation, case creation, retrieval, partial update and deletion, 404 handling, jurisdiction-scoped uniqueness and conflicts detected during database writes. The write-conflict tests bypass the preliminary lookup to exercise database constraint handling; they do not simulate concurrent requests.
+Tests cover reference rules, request validation, case creation, retrieval, partial update and deletion, 404 handling, jurisdiction-scoped uniqueness, conflicts detected during database writes, and the Correspondence-to-Document relationship. The write-conflict tests bypass the preliminary lookup to exercise database constraint handling; they do not simulate concurrent requests.
 
 After adding migrations, apply them to both the application and test databases before running integration tests.
 

@@ -3,7 +3,7 @@ import pytest
 from app.domain.exceptions import ApplicationNumberAlreadyExistsError, CaseAlreadyExistsError
 from app.schemas.case import CaseCreate
 from app.services import case_service
-from tests.integration.test_cases_api import TestSessionLocal, delete_case_by_internal_reference
+from tests.integration.db import TestSessionLocal, delete_case_by_internal_reference
 
 def test_create_case_raises_application_number_already_exists_error_for_duplicate_application_number_in_same_jurisdiction():
     db = TestSessionLocal()

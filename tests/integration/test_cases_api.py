@@ -1,32 +1,17 @@
 from fastapi import status
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, delete
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import delete
 
 from app.api.dependencies import get_db
-from app.db.models.case import Case
 from app.db.models.case_relationship import CaseRelationship, CaseRelationshipType
 from app.main import app
 from app.services import case_service
-
-TEST_DATABASE_URL = "postgresql+psycopg://patent_mailroom:patent_mailroom@localhost:5432/patent_mailroom_test"
-
-test_engine = create_engine(TEST_DATABASE_URL)
-TestSessionLocal = sessionmaker(bind=test_engine)
+from tests.integration.db import TestSessionLocal, delete_case_by_internal_reference
 
 def override_get_db():
     db = TestSessionLocal()
     try:
         yield db
-    finally:
-        db.close()
-
-def delete_case_by_internal_reference(internal_reference: str):
-    db = TestSessionLocal()
-    try:
-        statement = delete(Case).where(Case.internal_reference == internal_reference)
-        db.execute(statement)
-        db.commit()
     finally:
         db.close()
 
