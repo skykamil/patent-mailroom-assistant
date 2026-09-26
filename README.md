@@ -2,11 +2,12 @@
 
 An educational backend project for processing patent correspondence, built with Python, FastAPI, SQLAlchemy and PostgreSQL.
 
-The intended workflow is to import an email, extract information from its contents and attachments, and prepare proposed updates for human review. The current implementation covers the case creation foundation. Email processing, AI analysis and approval workflows are not implemented yet.
+The intended workflow is to import an email, extract information from its contents and attachments, and prepare proposed updates for human review. The current implementation covers the case creation and retrieval foundation. Email processing, AI analysis and approval workflows are not implemented yet.
 
 ## Current functionality
 
 - Create patent cases through a REST API.
+- Retrieve a patent case by its database ID.
 - Derive the jurisdiction from the internal reference, for example `PAT-CN-001` → `CN`.
 - Validate the internal reference format and text field lengths.
 - Store optional application, publication, grant and agent reference data.
@@ -35,7 +36,7 @@ The database also includes a case relationship model with `direct_parent` and `p
 | `app/domain/` | Reference validation, jurisdiction rules and domain exceptions |
 | `app/repositories/` | Database queries and adding records to the session |
 | `app/schemas/` | Request validation and response schemas |
-| `app/services/` | Case creation, transaction handling and conflict translation |
+| `app/services/` | Case creation and retrieval, transaction handling and conflict translation |
 | `alembic/` | Database migrations |
 | `tests/unit/` | Reference rule and health endpoint tests |
 | `tests/integration/` | API and service tests using a separate PostgreSQL database |
@@ -102,6 +103,7 @@ The current settings do not automatically load a `.env` file. Use shell environm
 | --- | --- | --- |
 | `GET` | `/health` | Basic API health check |
 | `POST` | `/cases` | Create a patent case |
+| `GET` | `/cases/{case_id}` | Retrieve a patent case by database ID |
 
 ### Create a case
 
@@ -120,11 +122,23 @@ This example uses synthetic data. Only `internal_reference` is required. The jur
 
 | Status | Meaning |
 | --- | --- |
+| `200 OK` | Case retrieved successfully |
 | `201 Created` | Case created; the response includes its database ID and jurisdiction |
+| `404 Not Found` | Case with the requested ID does not exist |
 | `409 Conflict` | Internal reference already exists, or the application number already exists in the same jurisdiction |
 | `422 Unprocessable Content` | Request validation failed |
 
 Repeating the example without changing its identifiers returns `409`. The same application number can be used in different jurisdictions. Cases may also omit the application number.
+
+### Get a case
+
+```bash
+curl -i http://127.0.0.1:8000/cases/1
+```
+
+If the case exists, the API returns `200 OK` with the case data.
+
+If the case does not exist, the API returns `404 Not Found`.
 
 ## Tests
 
@@ -156,7 +170,7 @@ Run the tests that do not require a running database:
 python -m pytest tests/unit -q
 ```
 
-Tests cover reference rules, request validation, case creation, jurisdiction-scoped uniqueness and conflicts detected during database writes. The write-conflict tests bypass the preliminary lookup to exercise database constraint handling; they do not simulate concurrent requests.
+Tests cover reference rules, request validation, case creation and retrieval, 404 handling, jurisdiction-scoped uniqueness and conflicts detected during database writes. The write-conflict tests bypass the preliminary lookup to exercise database constraint handling; they do not simulate concurrent requests.
 
 After adding migrations, apply them to both the application and test databases before running integration tests.
 

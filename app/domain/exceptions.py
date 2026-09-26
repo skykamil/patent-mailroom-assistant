@@ -1,5 +1,8 @@
+class ApplicationNumberAlreadyExistsError(Exception):
+    pass
+
 class CaseAlreadyExistsError(Exception):
     pass
 
-class ApplicationNumberAlreadyExistsError(Exception):
+class CaseNotFoundError(Exception):
     pass

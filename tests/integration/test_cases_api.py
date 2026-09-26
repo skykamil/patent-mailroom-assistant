@@ -164,3 +164,24 @@ def test_create_case_returns_409_when_internal_reference_conflict_occurs_at_data
         assert second_response.status_code == status.HTTP_409_CONFLICT
     finally:
         delete_case_by_internal_reference("PAT-CN-910")
+
+def test_get_case_by_id_returns_case():
+    delete_case_by_internal_reference("PAT-CN-911")
+    try:
+        create_response = client.post(
+            "/cases",
+            json={
+                "internal_reference": "PAT-CN-911"
+            },
+        )
+        case_id = create_response.json()["id"]
+        response = client.get(f"/cases/{case_id}")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["internal_reference"] == "PAT-CN-911"
+    finally:
+        delete_case_by_internal_reference("PAT-CN-911")
+
+def test_get_case_by_id_returns_404_when_case_does_not_exist():
+    response = client.get("/cases/999999")
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+    assert response.json()["detail"] == "Case with id 999999 not found"

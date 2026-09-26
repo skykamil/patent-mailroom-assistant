@@ -4,7 +4,7 @@ from psycopg.errors import UniqueViolation
 
 from app.db.models.case import Case
 from app.domain.case_rules import derive_jurisdiction
-from app.domain.exceptions import ApplicationNumberAlreadyExistsError, CaseAlreadyExistsError
+from app.domain.exceptions import ApplicationNumberAlreadyExistsError, CaseAlreadyExistsError, CaseNotFoundError
 from app.repositories import case_repository
 from app.schemas.case import CaseCreate
 
@@ -42,3 +42,9 @@ def create_case(db: Session, case_data: CaseCreate) -> Case:
         raise
     db.refresh(created_case)
     return created_case
+
+def get_case_by_id(db: Session, case_id: int) -> Case:
+    case = case_repository.get_case_by_id(db, case_id)
+    if case is None:
+        raise CaseNotFoundError(f"Case with id {case_id} not found")
+    return case

@@ -1,7 +1,5 @@
 import pytest
 
-from sqlalchemy.exc import IntegrityError
-
 from app.domain.exceptions import ApplicationNumberAlreadyExistsError, CaseAlreadyExistsError
 from app.schemas.case import CaseCreate
 from app.services import case_service
