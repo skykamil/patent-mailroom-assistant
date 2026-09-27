@@ -2,7 +2,7 @@
 
 An educational backend project for processing patent correspondence, built with Python, FastAPI, SQLAlchemy and PostgreSQL.
 
-The intended workflow is to import an email, extract information from its contents and attachments, and prepare proposed updates for human review. The current implementation covers the case CRUD foundation, correspondence and document models, local file storage, and direct-document import through the HTTP API. Email processing, AI analysis and approval workflows are not implemented yet.
+The intended workflow is to import an email, extract information from its contents and attachments, and prepare proposed updates for human review. The current implementation covers the case CRUD foundation, correspondence and document models, local file storage, direct-document import through the HTTP API, and deterministic MIME parsing of `.eml` messages and their attachments. Email import into the database, AI analysis and approval workflows are not implemented yet.
 
 ## Current functionality
 
@@ -17,6 +17,7 @@ The intended workflow is to import an email, extract information from its conten
 - Prevent duplicate internal references and duplicate application numbers within the same jurisdiction.
 - Return HTTP `409` for supported uniqueness conflicts, including conflicts detected during database writes.
 - Import one or more documents through the direct-upload API, creating a Correspondence record and related Document records.
+- Parse `.eml` messages deterministically, extracting email metadata, plain-text body content and MIME attachments.
 - Store document files in local filesystem storage with generated filenames, file size and SHA-256 metadata.
 - Roll back database changes and remove stored files if a direct-document import fails.
 - Manage database changes with Alembic migrations.
@@ -41,12 +42,13 @@ The database also includes a case relationship model with `direct_parent` and `p
 | `app/core/` | Application settings |
 | `app/db/` | Database engine, sessions and SQLAlchemy models |
 | `app/domain/` | Reference validation, jurisdiction rules and domain exceptions |
+| `app/parsers/` | Deterministic parsing of incoming `.eml` messages, email metadata, body text and MIME attachments |
 | `app/repositories/` | Database queries and adding records to the session |
 | `app/schemas/` | Request validation and response schemas |
 | `app/services/` | Case operations and direct-document import orchestration, transaction handling and cleanup |
 | `app/storage/` | Local filesystem storage and file cleanup |
 | `alembic/` | Database migrations |
-| `tests/unit/` | Reference rule, health endpoint and local storage tests |
+| `tests/unit/` | Reference rule, health endpoint, local storage and email parser tests |
 | `tests/integration/` | API and service tests using a separate PostgreSQL database |
 
 ## Local setup
@@ -217,7 +219,7 @@ Run the tests that do not require a running database:
 python -m pytest tests/unit -q
 ```
 
-Tests cover reference rules, request validation, case creation, retrieval, partial update and deletion, 404 handling, jurisdiction-scoped uniqueness, conflicts detected during database writes, the Correspondence-to-Document relationship, local file storage, direct-document import, direct-upload API behavior, and rollback/cleanup behavior when an import fails.
+Tests cover reference rules, request validation, case creation, retrieval, partial update and deletion, 404 handling, jurisdiction-scoped uniqueness, conflicts detected during database writes, the Correspondence-to-Document relationship, local file storage, direct-document import, direct-upload API behavior, rollback/cleanup behavior when an import fails, and deterministic `.eml` parsing including email metadata, plain-text body extraction, MIME attachments, unnamed attachments and a synthetic real-world email fixture.
 
 After adding migrations, apply them to both the application and test databases before running integration tests.
 
@@ -230,3 +232,7 @@ docker compose down
 ```
 
 The database volume is retained. Adding `-v` would delete it and its data.
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
