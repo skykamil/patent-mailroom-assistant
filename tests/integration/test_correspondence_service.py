@@ -7,6 +7,8 @@ from app.db.models.case import Case
 from app.db.models.correspondence import Correspondence
 from app.db.models.document import Document
 from app.domain.exceptions import CaseNotFoundError
+from app.domain.correspondence import ImportType
+from app.repositories import correspondence_repository
 from app.services import correspondence_service
 from app.services.correspondence_service import IncomingDocument
 from tests.integration.db import TestSessionLocal
@@ -141,4 +143,22 @@ def test_import_direct_documents_missing_case(tmp_path: Path, monkeypatch):
             )
         assert list(tmp_path.iterdir()) == []
     finally:
+        db.close()
+
+
+def test_get_correspondence_by_source_sha256():
+    db = TestSessionLocal()
+    try:
+        correspondence = Correspondence(
+            import_type=ImportType.EMAIL,
+            source_sha256="a" * 64
+        )
+        db.add(correspondence)
+        db.flush()
+        result = correspondence_repository.get_correspondence_by_source_sha256(db, "a" * 64)
+        assert result is not None
+        assert result.id == correspondence.id
+        assert result.source_sha256 == "a" * 64
+    finally:
+        db.rollback()
         db.close()
