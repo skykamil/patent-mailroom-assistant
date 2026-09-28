@@ -2,7 +2,7 @@
 
 An educational backend project for processing patent correspondence, built with Python, FastAPI, SQLAlchemy and PostgreSQL.
 
-The intended workflow is to import an email, extract information from its contents and attachments, and prepare proposed updates for human review. The current implementation covers the case CRUD foundation, correspondence and document models, local file storage, direct-document import through the HTTP API, and deterministic MIME parsing of `.eml` messages and their attachments. Email import into the database, AI analysis and approval workflows are not implemented yet.
+The intended workflow is to import an email, extract information from its contents and attachments, and prepare proposed updates for human review. The current implementation covers the case CRUD foundation, correspondence and document models, local file storage, direct-document import through the HTTP API, deterministic MIME parsing of `.eml` messages and their attachments, and transactional email import into the database with source-file storage, attachment extraction and duplicate detection. AI analysis and approval workflows are not implemented yet.
 
 ## Current functionality
 
@@ -18,6 +18,12 @@ The intended workflow is to import an email, extract information from its conten
 - Return HTTP `409` for supported uniqueness conflicts, including conflicts detected during database writes.
 - Import one or more documents through the direct-upload API, creating a Correspondence record and related Document records.
 - Parse `.eml` messages deterministically, extracting email metadata, plain-text body content and MIME attachments.
+- Import parsed `.eml` messages into PostgreSQL as Correspondence records.
+- Store the original raw `.eml` file and its SHA-256 source hash.
+- Store extracted email metadata and plain-text body content on the Correspondence record.
+- Store MIME attachments as related Document records.
+- Treat byte-identical `.eml` imports idempotently by returning the existing Correspondence instead of creating a duplicate.
+- Roll back database changes and remove stored source and attachment files if an email import fails.
 - Store document files in local filesystem storage with generated filenames, file size and SHA-256 metadata.
 - Roll back database changes and remove stored files if a direct-document import fails.
 - Manage database changes with Alembic migrations.
@@ -45,7 +51,7 @@ The database also includes a case relationship model with `direct_parent` and `p
 | `app/parsers/` | Deterministic parsing of incoming `.eml` messages, email metadata, body text and MIME attachments |
 | `app/repositories/` | Database queries and adding records to the session |
 | `app/schemas/` | Request validation and response schemas |
-| `app/services/` | Case operations and direct-document import orchestration, transaction handling and cleanup |
+| `app/services/` | Case operations, direct-document and email import orchestration, transaction handling and cleanup |
 | `app/storage/` | Local filesystem storage and file cleanup |
 | `alembic/` | Database migrations |
 | `tests/unit/` | Reference rule, health endpoint, local storage and email parser tests |
@@ -219,7 +225,7 @@ Run the tests that do not require a running database:
 python -m pytest tests/unit -q
 ```
 
-Tests cover reference rules, request validation, case creation, retrieval, partial update and deletion, 404 handling, jurisdiction-scoped uniqueness, conflicts detected during database writes, the Correspondence-to-Document relationship, local file storage, direct-document import, direct-upload API behavior, rollback/cleanup behavior when an import fails, and deterministic `.eml` parsing including email metadata, plain-text body extraction, MIME attachments, unnamed attachments and a synthetic real-world email fixture.
+Tests cover reference rules, request validation, case creation, retrieval, partial update and deletion, 404 handling, jurisdiction-scoped uniqueness, conflicts detected during database writes, the Correspondence-to-Document relationship, local file storage, direct-document import, direct-upload API behavior, rollback/cleanup behavior when an import fails, deterministic `.eml` parsing including email metadata, plain-text body extraction, MIME attachments, unnamed attachments and a synthetic real-world email fixture, transactional email import into the database, storage of the original raw `.eml`, attachment-to-Document creation, idempotent handling of byte-identical email imports, missing-case validation, and database/file cleanup when an email import fails.
 
 After adding migrations, apply them to both the application and test databases before running integration tests.
 

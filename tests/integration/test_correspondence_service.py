@@ -1,3 +1,4 @@
+from hashlib import sha256
 from pathlib import Path
 
 import pytest
@@ -161,4 +162,117 @@ def test_get_correspondence_by_source_sha256():
         assert result.source_sha256 == "a" * 64
     finally:
         db.rollback()
+        db.close()
+
+
+def test_import_email_creates_correspondence(tmp_path: Path, monkeypatch):
+    db = TestSessionLocal()
+    result = None
+    try:
+        monkeypatch.setattr(correspondence_service.local_storage, "UPLOAD_DIR", tmp_path)
+        fixture_path = Path(__file__).resolve().parents[1]/"fixtures"/"emails"/"PAT-CN-001_office_action_4mo.eml"
+        raw_email = fixture_path.read_bytes()
+        result = correspondence_service.import_email(
+            db=db,
+            raw_email=raw_email,
+            original_filename=fixture_path.name
+        )
+        assert result.created is True
+        correspondence = result.correspondence
+        assert correspondence.import_type == ImportType.EMAIL
+        assert correspondence.source_sha256 == sha256(raw_email).hexdigest()
+        assert correspondence.source_storage_path is not None
+        assert Path(correspondence.source_storage_path).exists()
+        assert len(correspondence.documents) == 2
+        document_name = {document.original_filename for document in correspondence.documents}
+        assert document_name == {"Agent_Letter.pdf", "Office_Action.pdf"}
+        for document in correspondence.documents:
+            assert Path(document.storage_path).exists()
+    finally:
+        if result is not None:
+            correspondence = result.correspondence
+            for document in correspondence.documents:
+                db.delete(document)
+            db.delete(correspondence)
+            db.commit()
+        db.close()
+
+
+def test_import_email_returns_existing_correspondence_for_duplicate(tmp_path: Path, monkeypatch):
+    first_result = None
+    db = TestSessionLocal()
+    try:
+        monkeypatch.setattr(correspondence_service.local_storage, "UPLOAD_DIR", tmp_path)
+        fixture_path = Path(__file__).resolve().parents[1]/"fixtures"/"emails"/"PAT-CN-001_office_action_4mo.eml"
+        raw_email = fixture_path.read_bytes()
+        first_result = correspondence_service.import_email(
+            db=db,
+            raw_email=raw_email,
+            original_filename=fixture_path.name,
+        )
+        second_result = correspondence_service.import_email(
+            db=db,
+            raw_email=raw_email,
+            original_filename=fixture_path.name,
+        )
+        assert first_result.created is True
+        assert second_result.created is False
+        assert second_result.correspondence.id == first_result.correspondence.id
+        assert len(list(tmp_path.iterdir())) == 3
+    finally:
+        if first_result is not None:
+            correspondence = first_result.correspondence
+            for document in correspondence.documents:
+                db.delete(document)
+            db.delete(correspondence)
+            db.commit()
+        db.close()
+
+
+def test_import_email_cleans_up_on_commit_error(tmp_path: Path, monkeypatch):
+    db = TestSessionLocal()
+    try:
+        monkeypatch.setattr(correspondence_service.local_storage, "UPLOAD_DIR", tmp_path)
+
+        def fail_commit():
+            db.flush()
+            raise RuntimeError("synthetic email import failure")
+
+        monkeypatch.setattr(db, "commit", fail_commit)
+        fixture_path = Path(__file__).resolve().parents[1]/"fixtures"/"emails"/"PAT-CN-001_office_action_4mo.eml"
+        raw_email = fixture_path.read_bytes()
+        correspondence_count_before = db.scalar(select(func.count()).select_from(Correspondence))
+        document_count_before = db.scalar(select(func.count()).select_from(Document))
+        with pytest.raises(RuntimeError, match="synthetic email import failure"):
+            correspondence_service.import_email(
+                db=db,
+                raw_email=raw_email,
+                original_filename=fixture_path.name,
+            )
+        correspondence_count_after = db.scalar(select(func.count()).select_from(Correspondence))
+        document_count_after = db.scalar(select(func.count()).select_from(Document))
+        assert correspondence_count_after == correspondence_count_before
+        assert document_count_after == document_count_before
+        assert list(tmp_path.iterdir()) == []
+    finally:
+        db.close()
+
+
+def test_import_email_missing_case(tmp_path: Path, monkeypatch):
+    db = TestSessionLocal()
+    try:
+        monkeypatch.setattr(correspondence_service.local_storage, "UPLOAD_DIR", tmp_path)
+        max_case_id = db.scalar(select(func.max(Case.id))) or 0
+        missing_case_id = max_case_id + 1
+        fixture_path = Path(__file__).resolve().parents[1]/"fixtures"/"emails"/"PAT-CN-001_office_action_4mo.eml"
+        raw_email = fixture_path.read_bytes()
+        with pytest.raises(CaseNotFoundError):
+            correspondence_service.import_email(
+                db=db,
+                raw_email=raw_email,
+                original_filename=fixture_path.name,
+                case_id=missing_case_id,
+            )
+        assert list(tmp_path.iterdir()) == []
+    finally:
         db.close()
