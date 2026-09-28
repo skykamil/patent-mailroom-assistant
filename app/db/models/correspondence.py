@@ -34,4 +34,5 @@ class Correspondence(Base):
         server_default=func.now()
     )
     source_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_storage_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     documents: Mapped[list["Document"]] = relationship(back_populates="correspondence")
