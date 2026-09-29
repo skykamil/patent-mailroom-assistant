@@ -2,13 +2,16 @@ import logging
 from dataclasses import dataclass
 from hashlib import sha256
 
+from psycopg.errors import UniqueViolation
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from app.db.models.correspondence import Correspondence
 from app.db.models.document import Document
 from app.domain.correspondence import ImportType
 from app.parsers.email_parser import parse_email
 from app.repositories import correspondence_repository, document_repository
+from app.schemas.document import DocumentUploadMetadata
 from app.services import case_service
 from app.storage import local_storage
 
@@ -84,6 +87,11 @@ def import_email(
         return EmailImportResult(correspondence=existing_correspondence, created=False)
     saved_paths: list[str] = []
     parsed_email = parse_email(raw_email)
+    for attachment in parsed_email.attachments:
+        DocumentUploadMetadata(
+            original_filename=attachment.original_filename,
+            mime_type=attachment.mime_type,
+        )
     try:
         stored_email = local_storage.save_file(content=raw_email, original_filename=original_filename)
         saved_paths.append(stored_email.storage_path)
@@ -121,6 +129,21 @@ def import_email(
             correspondence=correspondence,
             created=True,
         )
+    except IntegrityError as exc:
+        db.rollback()
+        for storage_path in saved_paths:
+            try:
+                local_storage.delete_file(storage_path)
+            except OSError:
+                logger.exception("Failed to delete stored file during import cleanup: %s", storage_path)
+        if isinstance(exc.orig, UniqueViolation) and exc.orig.diag.constraint_name == "uq_correspondences_source_sha256":
+            existing_correspondence = correspondence_repository.get_correspondence_by_source_sha256(db, source_sha256)
+            if existing_correspondence is not None:
+                return EmailImportResult(
+                    correspondence=existing_correspondence,
+                    created=False
+                )
+        raise
     except Exception:
         db.rollback()
         for storage_path in saved_paths:

@@ -1,7 +1,9 @@
+from email.message import EmailMessage
 from hashlib import sha256
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import func, select
 
 from app.db.models.case import Case
@@ -276,3 +278,105 @@ def test_import_email_missing_case(tmp_path: Path, monkeypatch):
         assert list(tmp_path.iterdir()) == []
     finally:
         db.close()
+
+
+def test_import_email_rejects_attachment_filename_over_255_chars(tmp_path: Path, monkeypatch):
+    db = TestSessionLocal()
+    try:
+        monkeypatch.setattr(correspondence_service.local_storage, "UPLOAD_DIR", tmp_path)
+        message = EmailMessage()
+        message.add_attachment(
+            b"synthetic attachment",
+            maintype="application",
+            subtype="pdf",
+            filename="a" * 255 + ".pdf",
+        )
+        raw_email = message.as_bytes()
+        correspondence_count_before = db.scalar(select(func.count()).select_from(Correspondence))
+        document_count_before = db.scalar(select(func.count()).select_from(Document))
+        with pytest.raises(ValidationError):
+            correspondence_service.import_email(
+                db=db,
+                raw_email=raw_email,
+                original_filename="test.eml"
+            )
+        correspondence_count_after = db.scalar(select(func.count()).select_from(Correspondence))
+        document_count_after = db.scalar(select(func.count()).select_from(Document))
+        assert correspondence_count_after == correspondence_count_before
+        assert document_count_after == document_count_before
+        assert list(tmp_path.iterdir()) == []
+    finally:
+        db.close()
+
+
+def test_import_email_rejects_attachment_mime_type_over_100_chars(tmp_path: Path, monkeypatch):
+    db = TestSessionLocal()
+    try:
+        monkeypatch.setattr(correspondence_service.local_storage, "UPLOAD_DIR", tmp_path)
+        message = EmailMessage()
+        message.add_attachment(
+            b"synthetic attachment",
+            maintype="a" * 101,
+            subtype="pdf",
+            filename="test.pdf",
+        )
+        raw_email = message.as_bytes()
+        correspondence_count_before = db.scalar(select(func.count()).select_from(Correspondence))
+        document_count_before = db.scalar(select(func.count()).select_from(Document))
+        with pytest.raises(ValidationError):
+            correspondence_service.import_email(
+                db=db,
+                raw_email=raw_email,
+                original_filename="test.eml"
+            )
+        correspondence_count_after = db.scalar(select(func.count()).select_from(Correspondence))
+        document_count_after = db.scalar(select(func.count()).select_from(Document))
+        assert correspondence_count_after == correspondence_count_before
+        assert document_count_after == document_count_before
+        assert list(tmp_path.iterdir()) == []
+    finally:
+        db.close()
+
+
+def test_import_email_returns_existing_correspondence_on_source_hash_write_conflict(tmp_path: Path, monkeypatch):
+    db = TestSessionLocal()
+    winner_db = TestSessionLocal()
+    winner_correspondence = None
+    try:
+        monkeypatch.setattr(correspondence_service.local_storage, "UPLOAD_DIR", tmp_path)
+        fixture_path = Path(__file__).resolve().parents[1]/"fixtures"/"emails"/"PAT-CN-001_office_action_4mo.eml"
+        raw_email = fixture_path.read_bytes()
+        source_sha256 = sha256(raw_email).hexdigest()
+        winner_correspondence = Correspondence(
+            import_type=ImportType.EMAIL,
+            source_sha256=source_sha256,
+        )
+        winner_db.add(winner_correspondence)
+        winner_db.commit()
+        original_lookup = correspondence_repository.get_correspondence_by_source_sha256
+        lookup_calls = 0
+
+        def fake_lookup(db, source_sha256):
+            nonlocal lookup_calls
+            lookup_calls += 1
+            if lookup_calls == 1:
+                return None
+            else:
+                return original_lookup(db, source_sha256)
+
+        monkeypatch.setattr(correspondence_repository, "get_correspondence_by_source_sha256", fake_lookup)
+        result = correspondence_service.import_email(
+            db=db,
+            raw_email=raw_email,
+            original_filename=fixture_path.name,
+        )
+        assert result.created is False
+        assert result.correspondence.id == winner_correspondence.id
+        assert lookup_calls == 2
+        assert list(tmp_path.iterdir()) == []
+    finally:
+        if winner_correspondence is not None:
+            winner_db.delete(winner_correspondence)
+            winner_db.commit()
+        db.close()
+        winner_db.close()

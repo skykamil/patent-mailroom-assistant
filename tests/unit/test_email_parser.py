@@ -94,3 +94,22 @@ def test_parse_real_eml_fixture():
     assert attachments_by_name["Office_Action.pdf"].mime_type == "application/pdf"
     assert attachments_by_name["Agent_Letter.pdf"].content.startswith(b"%PDF")
     assert attachments_by_name["Office_Action.pdf"].content.startswith(b"%PDF")
+
+
+def test_parse_email_reads_attached_email():
+    inner_message = EmailMessage()
+    inner_message["Subject"] = "inner message"
+    inner_message["From"] = "inner@test.com"
+    inner_message.set_content("Forwarded message body")
+    outer_message = EmailMessage()
+    outer_message["Subject"] = "outer message"
+    outer_message["From"] = "outer@test.com"
+    outer_message.set_content("Test message")
+    outer_message.add_attachment(inner_message, filename="forwarded.eml")
+    raw_email = outer_message.as_bytes()
+    parsed = parse_email(raw_email)
+    assert len(parsed.attachments) == 1
+    assert parsed.attachments[0].original_filename == "forwarded.eml"
+    assert parsed.attachments[0].mime_type == "message/rfc822"
+    assert isinstance(parsed.attachments[0].content, bytes)
+    assert b"Forwarded message body" in parsed.attachments[0].content

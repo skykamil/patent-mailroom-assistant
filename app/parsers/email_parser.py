@@ -43,7 +43,10 @@ def parse_email(raw_email: bytes) -> ParsedEmail:
         if filename is None:
             filename = f"unnamed_attachment_{index}"
         mime_type = attachment.get_content_type()
-        content = attachment.get_payload(decode=True)
+        if mime_type == "message/rfc822":
+            content = attachment.get_content().as_bytes()
+        else:
+            content = attachment.get_payload(decode=True)
         if not isinstance(content, bytes):
             raise ValueError(f"Attachment '{filename}' content is not bytes")
         parsed_attachment = ParsedAttachment(filename, mime_type, content)
