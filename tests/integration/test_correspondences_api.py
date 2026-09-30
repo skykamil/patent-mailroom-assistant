@@ -1,3 +1,4 @@
+from email.message import EmailMessage
 from pathlib import Path
 
 from fastapi import status
@@ -162,3 +163,127 @@ def test_direct_upload_returns_422_for_too_long_mime_type(tmp_path: Path, monkey
     assert response.json()["detail"][0]["type"] == "string_too_long"
     assert response.json()["detail"][0]["loc"] == ["mime_type"]
     assert list(tmp_path.iterdir()) == []
+
+
+def test_email_import_creates_correspondence_and_documents(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(correspondence_service.local_storage, "UPLOAD_DIR", tmp_path)
+    fixture_path = Path(__file__).resolve().parents[1]/"fixtures"/"emails"/"PAT-CN-001_office_action_4mo.eml"
+    raw_email = fixture_path.read_bytes()
+    files = {
+        "file": (
+            fixture_path.name,
+            raw_email,
+            "message/rfc822",
+        )
+    }
+    response = client.post(
+        "/correspondences/email-import",
+        files=files,
+    )
+    correspondence_id = response.json()["id"]
+    try:
+        assert response.status_code == status.HTTP_201_CREATED
+        response_data = response.json()
+        assert response_data["case_id"] is None
+        assert response_data["import_type"] == "email"
+        assert len(response_data["documents"]) == 2
+        document_names = {
+            document["original_filename"] for document in response_data["documents"]
+        }
+        assert document_names == {"Agent_Letter.pdf", "Office_Action.pdf"}
+        assert "source_storage_path" not in response_data
+    finally:
+        db = TestSessionLocal()
+        statement = delete(Document).where(Document.correspondence_id == correspondence_id)
+        db.execute(statement)
+        statement = delete(Correspondence).where(Correspondence.id == correspondence_id)
+        db.execute(statement)
+        db.commit()
+        db.close()
+
+
+def test_email_import_returns_200_for_duplicate(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(correspondence_service.local_storage, "UPLOAD_DIR", tmp_path)
+    fixture_path = Path(__file__).resolve().parents[1]/"fixtures"/"emails"/"PAT-CN-001_office_action_4mo.eml"
+    raw_email = fixture_path.read_bytes()
+    files = {
+        "file": (
+            fixture_path.name,
+            raw_email,
+            "message/rfc822",
+        )
+    }
+    first_response = client.post(
+        "/correspondences/email-import",
+        files=files,
+    )
+    correspondence_id = first_response.json()["id"]
+    second_response = client.post(
+        "/correspondences/email-import",
+        files=files,
+    )
+    try:
+        assert first_response.status_code == status.HTTP_201_CREATED
+        assert second_response.status_code == status.HTTP_200_OK
+        assert second_response.json()["id"] == correspondence_id
+    finally:
+        db = TestSessionLocal()
+        statement = delete(Document).where(Document.correspondence_id == correspondence_id)
+        db.execute(statement)
+        statement = delete(Correspondence).where(Correspondence.id == correspondence_id)
+        db.execute(statement)
+        db.commit()
+        db.close()
+
+
+def test_email_import_returns_404_when_case_does_not_exist(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(correspondence_service.local_storage, "UPLOAD_DIR", tmp_path)
+    db = TestSessionLocal()
+    max_case_id = db.scalar(select(func.max(Case.id))) or 0
+    missing_case_id = max_case_id + 1
+    db.close()
+    fixture_path = Path(__file__).resolve().parents[1]/"fixtures"/"emails"/"PAT-CN-001_office_action_4mo.eml"
+    raw_email = fixture_path.read_bytes()
+    files = {
+        "file": (
+            fixture_path.name,
+            raw_email,
+            "message/rfc822",
+        )
+    }
+    response = client.post(
+        "/correspondences/email-import",
+        files=files,
+        data={"case_id": str(missing_case_id)},
+    )
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+    assert response.json()["detail"] == f"Case with id {missing_case_id} not found"
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_email_import_returns_422_for_too_long_attachment_filename(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(correspondence_service.local_storage, "UPLOAD_DIR", tmp_path)
+    message = EmailMessage()
+    message.add_attachment(
+        b"synthetic attachment",
+        maintype="application",
+        subtype="pdf",
+        filename="a" * 255 + ".pdf",
+    )
+    raw_email = message.as_bytes()
+    files = {
+        "file": (
+            "test.eml",
+            raw_email,
+            "message/rfc822",
+        )
+    }
+    response = client.post(
+        "/correspondences/email-import",
+        files=files,
+    )
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+    assert response.json()["detail"][0]["type"] == "string_too_long"
+    assert response.json()["detail"][0]["loc"] == ["original_filename"]
+    assert list(tmp_path.iterdir()) == []
+    
