@@ -287,3 +287,34 @@ def test_email_import_returns_422_for_too_long_attachment_filename(tmp_path: Pat
     assert response.json()["detail"][0]["loc"] == ["original_filename"]
     assert list(tmp_path.iterdir()) == []
     
+
+def test_email_import_returns_422_for_invalid_email(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(correspondence_service.local_storage, "UPLOAD_DIR", tmp_path,)
+    db = TestSessionLocal()
+    try:
+        correspondence_count_before = db.scalar(select(func.count()).select_from(Correspondence))
+        document_count_before = db.scalar(select(func.count()).select_from(Document))
+    finally:
+        db.close()
+    files = {
+        "file": (
+            "invalid.eml",
+            b"not an email",
+            "message/rfc822",
+        )
+    }
+    response = client.post(
+        "/correspondences/email-import",
+        files=files,
+    )
+    db = TestSessionLocal()
+    try:
+        correspondence_count_after = db.scalar(select(func.count()).select_from(Correspondence))
+        document_count_after = db.scalar(select(func.count()).select_from(Document))
+    finally:
+        db.close()
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+    assert response.json()["detail"] == "Content is not a valid email message"
+    assert correspondence_count_after == correspondence_count_before
+    assert document_count_after == document_count_before
+    assert list(tmp_path.iterdir()) == []

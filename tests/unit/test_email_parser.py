@@ -1,6 +1,9 @@
 from email.message import EmailMessage
 from pathlib import Path
 
+import pytest
+
+from app.domain.exceptions import InvalidEmailError
 from app.parsers.email_parser import parse_email
 
 
@@ -113,3 +116,31 @@ def test_parse_email_reads_attached_email():
     assert parsed.attachments[0].mime_type == "message/rfc822"
     assert isinstance(parsed.attachments[0].content, bytes)
     assert b"Forwarded message body" in parsed.attachments[0].content
+
+
+def test_parse_email_rejects_empty_content():
+    with pytest.raises(InvalidEmailError):
+        parse_email(b"")
+
+
+def test_parse_email_rejects_plain_text():
+    with pytest.raises(InvalidEmailError):
+        parse_email(b"just some plain text")
+
+
+def test_parse_email_rejects_pdf_content():
+    with pytest.raises(InvalidEmailError):
+        parse_email(b"%PDF-1.4 synthetic pdf content")
+
+
+def test_parse_email_rejects_unknown_charset():
+    raw_email = (
+        b"From: sender@example.com\r\n"
+        b"To: recipient@example.com\r\n"
+        b"Subject: test\r\n"
+        b"Content-Type: text/plain; charset=unknown-charset\r\n"
+        b"\r\n"
+        b"synthetic body"
+    )
+    with pytest.raises(InvalidEmailError):
+        parse_email(raw_email)

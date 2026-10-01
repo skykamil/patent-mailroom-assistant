@@ -3,6 +3,19 @@ from datetime import datetime
 from email import policy
 from email.parser import BytesParser
 
+from app.domain.exceptions import InvalidEmailError
+
+
+EMAIL_HEADERS = {
+    "From",
+    "To",
+    "Subject",
+    "Date",
+    "Message-ID",
+    "MIME-Version",
+    "Content-Type",
+}
+
 
 @dataclass
 class ParsedAttachment:
@@ -24,6 +37,8 @@ class ParsedEmail:
 def parse_email(raw_email: bytes) -> ParsedEmail:
     parser = BytesParser(policy=policy.default)
     message = parser.parsebytes(raw_email)
+    if not EMAIL_HEADERS.intersection(message.keys()):
+        raise InvalidEmailError("Content is not a valid email message")
     subject = message["Subject"]
     if subject is not None:
         subject = str(subject)
@@ -36,7 +51,10 @@ def parse_email(raw_email: bytes) -> ParsedEmail:
     if message_id is not None:
         message_id = str(message_id)
     body_part = message.get_body(preferencelist=("plain",))
-    body_text = body_part.get_content() if body_part is not None else None
+    try:
+        body_text = body_part.get_content() if body_part is not None else None
+    except LookupError as exc:
+        raise InvalidEmailError("Email contains an unsupported character encoding") from exc
     attachments: list[ParsedAttachment] = []
     for index, attachment in enumerate(message.iter_attachments(), start=1):
         filename = attachment.get_filename()

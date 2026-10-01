@@ -24,6 +24,7 @@ The intended workflow is to import an email, extract information from its conten
 - Store MIME attachments as related Document records.
 - Treat byte-identical `.eml` imports idempotently by returning the existing Correspondence instead of creating a duplicate.
 - Import `.eml` messages through the HTTP API, returning `201 Created` for a new import and `200 OK` for a byte-identical existing message.
+- Reject invalid email content and unsupported character encodings before storing files or database records.
 - Roll back database changes and remove stored source and attachment files if an email import fails.
 - Store document files in local filesystem storage with generated filenames, file size and SHA-256 metadata.
 - Roll back database changes and remove stored files if a direct-document import fails.
@@ -244,7 +245,7 @@ Run the tests that do not require a running database:
 python -m pytest tests/unit -q
 ```
 
-Tests cover reference rules, request validation, case creation, retrieval, partial update and deletion, 404 handling, jurisdiction-scoped uniqueness, conflicts detected during database writes, the Correspondence-to-Document relationship, local file storage, direct-document import, direct-upload API behavior, rollback/cleanup behavior when an import fails, deterministic `.eml` parsing including email metadata, plain-text body extraction, MIME attachments, unnamed attachments and a synthetic real-world email fixture, transactional email import into the database, storage of the original raw `.eml`, attachment-to-Document creation, idempotent handling of byte-identical email imports, missing-case validation, and database/file cleanup when an email import fails, and email-import API behavior including `201 Created` for new imports, `200 OK` for byte-identical duplicates, `404 Not Found` for missing cases, and `422 Unprocessable Content` for invalid attachment metadata.
+Tests cover reference rules, request validation, case creation, retrieval, partial update and deletion, 404 handling, jurisdiction-scoped uniqueness, conflicts detected during database writes, the Correspondence-to-Document relationship, local file storage, direct-document import, direct-upload API behavior, rollback/cleanup behavior when an import fails, deterministic `.eml` parsing including email metadata, plain-text body extraction, MIME attachments, unnamed attachments and a synthetic real-world email fixture, rejection of empty content, plain text, PDF content and unsupported character encodings, transactional email import into the database, storage of the original raw `.eml`, attachment-to-Document creation, idempotent handling of byte-identical email imports, missing-case validation, database/file cleanup when an email import fails, and email-import API behavior including `201 Created` for new imports, `200 OK` for byte-identical duplicates, `404 Not Found` for missing cases, `422 Unprocessable Content` for invalid attachment metadata, and rejection of invalid email content without creating database records or stored files.
 
 After adding migrations, apply them to both the application and test databases before running integration tests.
 

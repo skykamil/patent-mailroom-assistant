@@ -3,7 +3,7 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_db
-from app.domain.exceptions import CaseNotFoundError
+from app.domain.exceptions import CaseNotFoundError, InvalidEmailError
 from app.schemas.correspondence import CorrespondenceRead
 from app.schemas.document import DocumentUploadMetadata
 from app.services import correspondence_service
@@ -70,6 +70,8 @@ def email_import(
         )
     except CaseNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InvalidEmailError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
     except ValidationError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=exc.errors()) from exc
     if not result.created:

@@ -12,3 +12,7 @@ class CaseNotFoundError(Exception):
 
 class CaseInUseError(Exception):
     pass
+
+
+class InvalidEmailError(Exception):
+    pass
