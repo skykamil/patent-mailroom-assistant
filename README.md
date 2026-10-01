@@ -2,7 +2,7 @@
 
 An educational backend project for processing patent correspondence, built with Python, FastAPI, SQLAlchemy and PostgreSQL.
 
-The intended workflow is to import an email, extract information from its contents and attachments, and prepare proposed updates for human review. The current implementation covers the case CRUD foundation, correspondence and document models, local file storage, direct-document import through the HTTP API, deterministic MIME parsing of `.eml` messages and their attachments, transactional email import through the HTTP API with source-file storage, attachment extraction and duplicate detection, and the database model for storing analysis results. Analysis generation, AI integration and approval workflows are not implemented yet.
+The intended workflow is to import an email, extract information from its contents and attachments, and prepare proposed updates for human review. The current implementation covers the case CRUD foundation, correspondence and document models, local file storage, direct-document import through the HTTP API, deterministic MIME parsing of `.eml` messages and their attachments, transactional email import through the HTTP API with source-file storage, attachment extraction and duplicate detection, and the database model and service layer for storing and updating prepared analysis results. Automatic analysis generation, AI integration and approval workflows are not implemented yet.
 
 ## Current functionality
 
@@ -25,6 +25,7 @@ The intended workflow is to import an email, extract information from its conten
 - Treat byte-identical `.eml` imports idempotently by returning the existing Correspondence instead of creating a duplicate.
 - Import `.eml` messages through the HTTP API, returning `201 Created` for a new import and `200 OK` for a byte-identical existing message.
 - Store one Analysis record per Correspondence, including proposed case identifiers, event classification, Office Action type, relevant dates and analysis timestamps.
+- Create a prepared Analysis result for an existing Correspondence and update the existing record on re-analysis instead of creating duplicates.
 - Reject invalid email content and unsupported character encodings before storing files or database records.
 - Roll back database changes and remove stored source and attachment files if an email import fails.
 - Store document files in local filesystem storage with generated filenames, file size and SHA-256 metadata.
@@ -54,7 +55,7 @@ The database also includes a case relationship model with `direct_parent` and `p
 | `app/parsers/` | Deterministic parsing of incoming `.eml` messages, email metadata, body text and MIME attachments |
 | `app/repositories/` | Database queries and adding records to the session |
 | `app/schemas/` | Request validation and response schemas |
-| `app/services/` | Case operations, direct-document and email import orchestration, transaction handling and cleanup |
+| `app/services/` | Case operations, correspondence import orchestration, analysis result handling, transaction handling and cleanup |
 | `app/storage/` | Local filesystem storage and file cleanup |
 | `alembic/` | Database migrations |
 | `tests/unit/` | Reference rule, health endpoint, local storage and email parser tests |
@@ -246,7 +247,7 @@ Run the tests that do not require a running database:
 python -m pytest tests/unit -q
 ```
 
-Tests cover reference rules, request validation, case creation, retrieval, partial update and deletion, 404 handling, jurisdiction-scoped uniqueness, conflicts detected during database writes, the Correspondence-to-Document relationship, local file storage, direct-document import, direct-upload API behavior, rollback/cleanup behavior when an import fails, deterministic `.eml` parsing including email metadata, plain-text body extraction, MIME attachments, unnamed attachments and a synthetic real-world email fixture, rejection of empty content, plain text, PDF content and unsupported character encodings, transactional email import into the database, storage of the original raw `.eml`, attachment-to-Document creation, idempotent handling of byte-identical email imports, missing-case validation, database/file cleanup when an email import fails, and email-import API behavior including `201 Created` for new imports, `200 OK` for byte-identical duplicates, `404 Not Found` for missing cases, `422 Unprocessable Content` for invalid attachment metadata, and rejection of invalid email content without creating database records or stored files.
+Tests cover reference rules, request validation, case creation, retrieval, partial update and deletion, 404 handling, jurisdiction-scoped uniqueness, conflicts detected during database writes, the Correspondence-to-Document relationship, local file storage, direct-document import, direct-upload API behavior, rollback/cleanup behavior when an import fails, deterministic `.eml` parsing including email metadata, plain-text body extraction, MIME attachments, unnamed attachments and a synthetic real-world email fixture, rejection of empty content, plain text, PDF content and unsupported character encodings, transactional email import into the database, storage of the original raw `.eml`, attachment-to-Document creation, idempotent handling of byte-identical email imports, missing-case validation, database/file cleanup when an email import fails, and email-import API behavior including `201 Created` for new imports, `200 OK` for byte-identical duplicates, `404 Not Found` for missing cases, `422 Unprocessable Content` for invalid attachment metadata, and rejection of invalid email content without creating database records or stored files, and Analysis service behavior including creation for an existing Correspondence, updating an existing Analysis without creating duplicates, clearing previously stored values, timestamp updates and missing-Correspondence handling.
 
 After adding migrations, apply them to both the application and test databases before running integration tests.
 
