@@ -2,7 +2,7 @@
 
 An educational backend project for processing patent correspondence, built with Python, FastAPI, SQLAlchemy and PostgreSQL.
 
-The intended workflow is to import an email, extract information from its contents and attachments, and prepare proposed updates for human review. The current implementation covers the case CRUD foundation, correspondence and document models, local file storage, direct-document import through the HTTP API, deterministic MIME parsing of `.eml` messages and their attachments, and transactional email import through the HTTP API with source-file storage, attachment extraction and duplicate detection. AI analysis and approval workflows are not implemented yet.
+The intended workflow is to import an email, extract information from its contents and attachments, and prepare proposed updates for human review. The current implementation covers the case CRUD foundation, correspondence and document models, local file storage, direct-document import through the HTTP API, deterministic MIME parsing of `.eml` messages and their attachments, transactional email import through the HTTP API with source-file storage, attachment extraction and duplicate detection, and the database model for storing analysis results. Analysis generation, AI integration and approval workflows are not implemented yet.
 
 ## Current functionality
 
@@ -24,6 +24,7 @@ The intended workflow is to import an email, extract information from its conten
 - Store MIME attachments as related Document records.
 - Treat byte-identical `.eml` imports idempotently by returning the existing Correspondence instead of creating a duplicate.
 - Import `.eml` messages through the HTTP API, returning `201 Created` for a new import and `200 OK` for a byte-identical existing message.
+- Store one Analysis record per Correspondence, including proposed case identifiers, event classification, Office Action type, relevant dates and analysis timestamps.
 - Reject invalid email content and unsupported character encodings before storing files or database records.
 - Roll back database changes and remove stored source and attachment files if an email import fails.
 - Store document files in local filesystem storage with generated filenames, file size and SHA-256 metadata.
@@ -49,7 +50,7 @@ The database also includes a case relationship model with `direct_parent` and `p
 | `app/api/` | HTTP routes and database session dependency |
 | `app/core/` | Application settings |
 | `app/db/` | Database engine, sessions and SQLAlchemy models |
-| `app/domain/` | Reference validation, jurisdiction rules and domain exceptions |
+| `app/domain/` | Domain enums, reference validation, jurisdiction rules and domain exceptions |
 | `app/parsers/` | Deterministic parsing of incoming `.eml` messages, email metadata, body text and MIME attachments |
 | `app/repositories/` | Database queries and adding records to the session |
 | `app/schemas/` | Request validation and response schemas |

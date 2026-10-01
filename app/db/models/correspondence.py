@@ -9,6 +9,7 @@ from app.domain.correspondence import ImportType
 
 if TYPE_CHECKING:
     from app.db.models.document import Document
+    from app.db.models.analysis import Analysis
 
 
 class Correspondence(Base):
@@ -37,3 +38,4 @@ class Correspondence(Base):
     email_message_id: Mapped[str | None] = mapped_column(String, nullable=True)
     body_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     documents: Mapped[list["Document"]] = relationship(back_populates="correspondence")
+    analysis: Mapped["Analysis | None"] = relationship(back_populates="correspondence")
