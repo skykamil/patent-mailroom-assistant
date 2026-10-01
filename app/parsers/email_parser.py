@@ -37,7 +37,7 @@ class ParsedEmail:
 def parse_email(raw_email: bytes) -> ParsedEmail:
     parser = BytesParser(policy=policy.default)
     message = parser.parsebytes(raw_email)
-    if not EMAIL_HEADERS.intersection(message.keys()):
+    if not any(header in message for header in EMAIL_HEADERS):
         raise InvalidEmailError("Content is not a valid email message")
     subject = message["Subject"]
     if subject is not None:

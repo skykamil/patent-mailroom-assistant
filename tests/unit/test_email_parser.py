@@ -144,3 +144,16 @@ def test_parse_email_rejects_unknown_charset():
     )
     with pytest.raises(InvalidEmailError):
         parse_email(raw_email)
+
+
+@pytest.mark.parametrize("header_name", ["Subject", "subject", "SUBJECT", "sUbJeCt"])
+def test_parse_email_accepts_case_insensitive_headers(header_name: str):
+    raw_email = (
+        f"{header_name}: Test subject\r\n"
+        "\r\n"
+        "Synthetic email body"
+    ).encode("utf-8")
+    result = parse_email(raw_email)
+    assert result.subject == "Test subject"
+    assert result.body_text == "Synthetic email body"
+    assert result.attachments == []
