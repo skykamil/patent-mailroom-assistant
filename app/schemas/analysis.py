@@ -6,6 +6,7 @@ from app.domain.analysis import EventType, OfficeActionType
 
 
 class AnalysisCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     internal_reference: str | None = Field(default=None, max_length=50)
     jurisdiction: str | None = Field(default=None, max_length=2)
     application_number: str | None = Field(default=None, max_length=50)

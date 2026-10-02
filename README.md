@@ -6,34 +6,35 @@ The intended workflow is to import an email, extract information from its conten
 
 ## Current functionality
 
-- Create patent cases through a REST API.
-- Retrieve a patent case by its database ID.
-- Partially update case data while leaving unspecified fields unchanged.
-- Delete cases that are not referenced by related records.
-- Prevent deletion of cases that are still in use.
-- Derive the jurisdiction from the internal reference, for example `PAT-CN-001` → `CN`.
-- Validate the internal reference format and text field lengths.
-- Store optional application, publication, grant and agent reference data.
-- Prevent duplicate internal references and duplicate application numbers within the same jurisdiction.
-- Return HTTP `409` for supported uniqueness conflicts, including conflicts detected during database writes.
-- Import one or more documents through the direct-upload API, creating a Correspondence record and related Document records.
-- Parse `.eml` messages deterministically, extracting email metadata, plain-text body content and MIME attachments.
-- Import parsed `.eml` messages into PostgreSQL as Correspondence records.
-- Store the original raw `.eml` file and its SHA-256 source hash.
-- Store extracted email metadata and plain-text body content on the Correspondence record.
-- Store MIME attachments as related Document records.
-- Treat byte-identical `.eml` imports idempotently by returning the existing Correspondence instead of creating a duplicate.
-- Import `.eml` messages through the HTTP API, returning `201 Created` for a new import and `200 OK` for a byte-identical existing message.
-- Store one Analysis record per Correspondence, including proposed case identifiers, event classification, Office Action type, relevant dates and analysis timestamps.
-- Create a prepared Analysis result for an existing Correspondence and update the existing record on re-analysis instead of creating duplicates.
-- Expose Analysis through the HTTP API, creating it on first save and updating the existing record on subsequent saves.
-- Roll back failed Analysis writes and serialize concurrent first saves for the same Correspondence to prevent duplicate Analysis records.
-- Reject invalid email content and unsupported character encodings before storing files or database records.
-- Roll back database changes and remove stored source and attachment files if an email import fails.
-- Store document files in local filesystem storage with generated filenames, file size and SHA-256 metadata.
-- Roll back database changes and remove stored files if a direct-document import fails.
-- Manage database changes with Alembic migrations.
+### Cases
 
+- Create, retrieve, partially update and delete patent cases through the REST API.
+- Prevent deletion of cases referenced by related records.
+- Validate internal references and text field lengths, and derive jurisdiction from the reference, for example `PAT-CN-001` → `CN`.
+- Store optional application, publication, grant and agent reference data.
+- Enforce unique internal references and unique application numbers within each jurisdiction, returning `409 Conflict` for supported uniqueness conflicts.
+
+### Correspondence import
+
+- Import one or more documents through the direct-upload API, creating a `Correspondence` and related `Document` records.
+- Parse and import `.eml` messages, extracting email metadata, plain-text body content and MIME attachments.
+- Store the original `.eml` file and its SHA-256 source hash, with attachments stored as related `Document` records.
+- Return the existing `Correspondence` for byte-identical email imports without changing its case association.
+- Reject invalid email content, unsupported character encodings and invalid attachment metadata before storing files or database records.
+
+### Analysis
+
+- Store at most one `Analysis` per `Correspondence`, containing proposed case identifiers, event classification, Office Action type, relevant dates and timestamps.
+- Create or replace a prepared analysis result through the HTTP API.
+- Roll back failed analysis writes and serialize concurrent saves for the same correspondence to prevent duplicate records.
+- Accept analysis data supplied by the client. Automatic extraction, deadline calculation, AI integration and approval workflows are not implemented yet.
+
+### Storage and database
+
+- Store uploaded documents and email source files locally under generated filenames.
+- Record document file sizes and SHA-256 hashes.
+- Roll back database changes and attempt to remove files written during a failed import, logging any file cleanup errors.
+- Manage database changes with Alembic migrations.
 
 The database also includes a case relationship model with `direct_parent` and `priority` relationship types. Relationship management is not exposed through the API yet.
 
@@ -119,6 +120,14 @@ Settings are defined in `app/core/config.py` and can be overridden through envir
 
 The current settings do not automatically load a `.env` file. Use shell environment variables when overriding the defaults. Use the same database URL for the application and its migrations.
 
+### File storage
+
+Uploaded documents, email attachments and original `.eml` files are stored in `data/uploads/`, relative to the application's working directory. Run the API from the repository root to use this location consistently.
+
+The storage path is currently defined in `app/storage/local_storage.py`; it is not an environment-variable setting.
+
+These files are stored separately from the PostgreSQL Docker volume. Removing the database volume does not remove uploaded files, and removing uploaded files does not remove their database records.
+
 ## API
 
 | Method | Endpoint | Purpose |
@@ -128,9 +137,13 @@ The current settings do not automatically load a `.env` file. Use shell environm
 | `GET` | `/cases/{case_id}` | Retrieve a patent case by database ID |
 | `PATCH` | `/cases/{case_id}` | Partially update a patent case |
 | `DELETE` | `/cases/{case_id}` | Delete a patent case |
-| `POST` | `/correspondences/direct-upload` | Import one or more documents and create a Correspondence record |
-| `POST` | `/correspondences/email-import` | Import an `.eml` message and create or return a Correspondence record |
-| `PUT` | `/correspondences/{correspondence_id}/analysis` | Create or replace the Analysis for a Correspondence |
+| `POST` | `/correspondences/direct-upload` | Import one or more documents and create a `Correspondence` record |
+| `POST` | `/correspondences/email-import` | Import an `.eml` message and create or return a `Correspondence` record |
+| `PUT` | `/correspondences/{correspondence_id}/analysis` | Create or replace the `Analysis` for a `Correspondence` |
+
+The examples below use `1` as a placeholder database ID. Replace case IDs in `/cases/1` and `case_id=1` with the `id` returned when creating a case. Replace the correspondence ID in `/correspondences/1/analysis` with the `id` returned by an import.
+
+The examples demonstrate individual operations. If you want to associate an import with a case, keep that case instead of running the deletion example first.
 
 ### Create a case
 
@@ -146,14 +159,6 @@ curl -i -X POST http://127.0.0.1:8000/cases \
 ```
 
 This example uses synthetic data. Only `internal_reference` is required. The jurisdiction is derived by the application rather than supplied in the request.
-
-| Status | Meaning |
-| --- | --- |
-| `200 OK` | Case retrieved successfully |
-| `201 Created` | Case created; the response includes its database ID and jurisdiction |
-| `404 Not Found` | Case with the requested ID does not exist |
-| `409 Conflict` | A uniqueness conflict occurred, or the case cannot be deleted because it is in use |
-| `422 Unprocessable Content` | Request validation failed |
 
 Repeating the example without changing its identifiers returns `409`. The same application number can be used in different jurisdictions. Cases may also omit the application number.
 
@@ -187,7 +192,20 @@ curl -i -X DELETE http://127.0.0.1:8000/cases/1
 
 A case that is not in use is deleted with `204 No Content`. If the case is referenced by another database record, the API returns `409 Conflict`.
 
+### Case response statuses
+
+| Status | Meaning |
+| --- | --- |
+| `200 OK` | Case retrieved or updated successfully |
+| `201 Created` | Case created; the response includes its database ID and jurisdiction |
+| `204 No Content` | Case deleted successfully |
+| `404 Not Found` | Case with the requested ID does not exist |
+| `409 Conflict` | A uniqueness conflict occurred, or the case cannot be deleted because it is in use |
+| `422 Unprocessable Content` | Request validation failed |
+
 ### Direct document upload
+
+The PDF filenames below are examples, not bundled files. Replace them with paths to your own test documents.
 
 ```bash
 curl -i -X POST http://127.0.0.1:8000/correspondences/direct-upload \
@@ -195,7 +213,7 @@ curl -i -X POST http://127.0.0.1:8000/correspondences/direct-upload \
   -F 'files=@Search_Report.pdf'
 ```
 
-To associate the imported documents with an existing case, include its database ID as a form field:
+To associate a new import with an existing case, include its database ID as a form field:
 
 ```bash
 curl -i -X POST http://127.0.0.1:8000/correspondences/direct-upload \
@@ -203,26 +221,45 @@ curl -i -X POST http://127.0.0.1:8000/correspondences/direct-upload \
   -F 'case_id=1'
 ```
 
+Each successful request creates a new `Correspondence` and related `Document` records. Direct document uploads do not use the email import's duplicate detection.
+
+| Status | Meaning |
+| --- | --- |
+| `201 Created` | Documents imported successfully |
+| `404 Not Found` | The supplied case ID does not exist |
+| `422 Unprocessable Content` | Request validation failed, including invalid document metadata |
+
 ### Email import
 
+The repository includes a synthetic `.eml` fixture. Run this example from the repository root:
+
 ```bash
 curl -i -X POST http://127.0.0.1:8000/correspondences/email-import \
-  -F 'file=@PAT-CN-001_office_action_4mo.eml'
+  -F 'file=@tests/fixtures/emails/PAT-CN-001_office_action_4mo.eml'
 ```
 
-To associate the imported email with an existing case, include its database ID as a form field:
+Alternatively, to associate the email with an existing case on its first import, include the case's database ID:
 
 ```bash
 curl -i -X POST http://127.0.0.1:8000/correspondences/email-import \
-  -F 'file=@PAT-CN-001_office_action_4mo.eml' \
+  -F 'file=@tests/fixtures/emails/PAT-CN-001_office_action_4mo.eml' \
   -F 'case_id=1'
 ```
 
-A byte-identical `.eml` that was already imported returns the existing Correspondence with `200 OK`; a new import returns `201 Created`.
+Choose the appropriate example for the first import. Importing the same file again returns the existing `Correspondence` without changing its case association. In particular, running the second example after the first does not attach the previously imported email to a case.
+
+Duplicate detection compares the SHA-256 hash of the original file bytes. It applies to byte-identical messages, not messages with merely similar contents.
+
+| Status | Meaning |
+| --- | --- |
+| `200 OK` | A byte-identical email already exists; the existing correspondence is returned |
+| `201 Created` | Email imported successfully |
+| `404 Not Found` | The supplied case ID does not exist |
+| `422 Unprocessable Content` | Invalid email content, unsupported character encoding or request validation failure, including invalid attachment metadata |
 
 ### Save analysis
 
-A prepared analysis result can be stored for an existing Correspondence:
+A prepared analysis result can be stored for an existing `Correspondence`. Use the correspondence ID returned by an import:
 
 ```bash
 curl -i -X PUT http://127.0.0.1:8000/correspondences/1/analysis \
@@ -240,11 +277,20 @@ curl -i -X PUT http://127.0.0.1:8000/correspondences/1/analysis \
   }'
 ```
 
-The first save for a Correspondence returns `201 Created`. Sending another complete Analysis for the same Correspondence replaces the existing values and returns `200 OK` without creating a duplicate record.
+This endpoint creates or fully replaces the editable analysis data. On an existing `Analysis`, omitted fields are reset to `null`; they do not retain their previous values. Sending an explicit `null` also clears a field.
 
-If the Correspondence does not exist, the API returns `404 Not Found`. Invalid Analysis input returns `422 Unprocessable Content`.
+Subsequent saves keep the same analysis record and its ID. Each `Correspondence` can have at most one `Analysis`.
 
-The Analysis data is currently supplied explicitly by the client. Automatic extraction and AI-generated analysis are not implemented yet.
+| Status | Meaning |
+| --- | --- |
+| `201 Created` | The first analysis for this correspondence was saved |
+| `200 OK` | The existing analysis was replaced |
+| `404 Not Found` | The correspondence does not exist |
+| `422 Unprocessable Content` | Request validation failed, including unknown fields |
+
+All analysis values are currently supplied by the client, including `calculated_due_date`. The application does not yet extract these values automatically, calculate deadlines or generate analysis using AI.
+
+Saving an analysis stores proposed data only. It does not update the associated case or approve the proposed changes.
 
 ## Tests
 
@@ -276,7 +322,14 @@ Run the tests that do not require a running database:
 python -m pytest tests/unit -q
 ```
 
-Tests cover reference rules, request validation, case creation, retrieval, partial update and deletion, 404 handling, jurisdiction-scoped uniqueness, conflicts detected during database writes, the Correspondence-to-Document relationship, local file storage, direct-document import, direct-upload API behavior, rollback/cleanup behavior when an import fails, deterministic `.eml` parsing including email metadata, plain-text body extraction, MIME attachments, unnamed attachments and a synthetic real-world email fixture, rejection of empty content, plain text, PDF content and unsupported character encodings, transactional email import into the database, storage of the original raw `.eml`, attachment-to-Document creation, idempotent handling of byte-identical email imports, missing-case validation, database/file cleanup when an email import fails, and email-import API behavior including `201 Created` for new imports, `200 OK` for byte-identical duplicates, `404 Not Found` for missing cases, `422 Unprocessable Content` for invalid attachment metadata, rejection of invalid email content without creating database records or stored files, and Analysis service behavior including creation for an existing Correspondence, updating an existing Analysis without creating duplicates, clearing previously stored values, timestamp updates and missing-Correspondence handling, rollback behavior for failed Analysis creation and updates, concurrent first-save protection, and Analysis API behavior including `201 Created` for the first save, `200 OK` when replacing an existing Analysis, `404 Not Found` for a missing Correspondence, and `422 Unprocessable Content` for invalid Analysis input.
+Tests cover:
+
+- **Cases:** reference rules, request validation, creation, retrieval, partial updates, deletion, missing-record handling, jurisdiction-scoped uniqueness and conflicts detected during database writes.
+- **Storage and direct uploads:** local file storage, the `Correspondence`–`Document` relationship, document import, upload API behavior, and database rollback and file cleanup after failures.
+- **Email parsing:** metadata, plain-text body extraction, MIME attachments, unnamed attachments, case-insensitive headers and a synthetic email fixture. Invalid-input tests cover empty content, plain text, PDF content and unsupported character encodings.
+- **Email import:** original `.eml` storage, attachment records, byte-identical duplicate detection, missing-case validation, rollback and file cleanup. API tests cover new and duplicate imports, invalid attachment metadata, and rejection of invalid email content without creating records or files.
+- **Analysis service:** creation, replacement without duplicates, clearing stored values, timestamp updates, missing-correspondence handling, rollback after failed creates and updates, and concurrent first saves.
+- **Analysis API:** `201 Created` on the first save, `200 OK` on replacement, `404 Not Found` for a missing correspondence and `422 Unprocessable Content` for invalid input.
 
 After adding migrations, apply them to both the application and test databases before running integration tests.
 
