@@ -2,7 +2,7 @@
 
 An educational backend project for processing patent correspondence, built with Python, FastAPI, SQLAlchemy and PostgreSQL.
 
-The intended workflow is to import an email, extract information from its contents and attachments, and prepare proposed updates for human review. The current implementation covers the case CRUD foundation, correspondence and document models, local file storage, direct-document import through the HTTP API, deterministic MIME parsing of `.eml` messages and their attachments, transactional email import through the HTTP API with source-file storage, attachment extraction and duplicate detection, and the database model and service layer for storing and updating prepared analysis results. Automatic analysis generation, AI integration and approval workflows are not implemented yet.
+The intended workflow is to import an email, extract information from its contents and attachments, and prepare proposed updates for human review. The current implementation covers the case CRUD foundation, correspondence and document models, local file storage, direct-document import through the HTTP API, deterministic MIME parsing of `.eml` messages and their attachments, transactional email import through the HTTP API with source-file storage, attachment extraction and duplicate detection, and the database model, service layer and HTTP API for storing and updating prepared analysis results. Automatic analysis generation, AI integration and approval workflows are not implemented yet.
 
 ## Current functionality
 
@@ -26,6 +26,7 @@ The intended workflow is to import an email, extract information from its conten
 - Import `.eml` messages through the HTTP API, returning `201 Created` for a new import and `200 OK` for a byte-identical existing message.
 - Store one Analysis record per Correspondence, including proposed case identifiers, event classification, Office Action type, relevant dates and analysis timestamps.
 - Create a prepared Analysis result for an existing Correspondence and update the existing record on re-analysis instead of creating duplicates.
+- Expose Analysis through the HTTP API, creating it on first save and updating the existing record on subsequent saves.
 - Roll back failed Analysis writes and serialize concurrent first saves for the same Correspondence to prevent duplicate Analysis records.
 - Reject invalid email content and unsupported character encodings before storing files or database records.
 - Roll back database changes and remove stored source and attachment files if an email import fails.
@@ -129,6 +130,7 @@ The current settings do not automatically load a `.env` file. Use shell environm
 | `DELETE` | `/cases/{case_id}` | Delete a patent case |
 | `POST` | `/correspondences/direct-upload` | Import one or more documents and create a Correspondence record |
 | `POST` | `/correspondences/email-import` | Import an `.eml` message and create or return a Correspondence record |
+| `PUT` | `/correspondences/{correspondence_id}/analysis` | Create or replace the Analysis for a Correspondence |
 
 ### Create a case
 
@@ -218,6 +220,32 @@ curl -i -X POST http://127.0.0.1:8000/correspondences/email-import \
 
 A byte-identical `.eml` that was already imported returns the existing Correspondence with `200 OK`; a new import returns `201 Created`.
 
+### Save analysis
+
+A prepared analysis result can be stored for an existing Correspondence:
+
+```bash
+curl -i -X PUT http://127.0.0.1:8000/correspondences/1/analysis \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "internal_reference": "PAT-CN-001",
+    "jurisdiction": "CN",
+    "application_number": "202611111111.1",
+    "event_type": "office_action",
+    "office_action_type": "Office Action 4MO",
+    "document_date": "2026-09-15",
+    "agent_notification_date": "2026-09-18",
+    "agent_reported_due_date": "2027-01-15",
+    "calculated_due_date": "2027-01-15"
+  }'
+```
+
+The first save for a Correspondence returns `201 Created`. Sending another complete Analysis for the same Correspondence replaces the existing values and returns `200 OK` without creating a duplicate record.
+
+If the Correspondence does not exist, the API returns `404 Not Found`. Invalid Analysis input returns `422 Unprocessable Content`.
+
+The Analysis data is currently supplied explicitly by the client. Automatic extraction and AI-generated analysis are not implemented yet.
+
 ## Tests
 
 The integration tests use a separate database, `patent_mailroom_test`, on the same local PostgreSQL server. Docker Compose does not create this database automatically.
@@ -248,7 +276,7 @@ Run the tests that do not require a running database:
 python -m pytest tests/unit -q
 ```
 
-Tests cover reference rules, request validation, case creation, retrieval, partial update and deletion, 404 handling, jurisdiction-scoped uniqueness, conflicts detected during database writes, the Correspondence-to-Document relationship, local file storage, direct-document import, direct-upload API behavior, rollback/cleanup behavior when an import fails, deterministic `.eml` parsing including email metadata, plain-text body extraction, MIME attachments, unnamed attachments and a synthetic real-world email fixture, rejection of empty content, plain text, PDF content and unsupported character encodings, transactional email import into the database, storage of the original raw `.eml`, attachment-to-Document creation, idempotent handling of byte-identical email imports, missing-case validation, database/file cleanup when an email import fails, and email-import API behavior including `201 Created` for new imports, `200 OK` for byte-identical duplicates, `404 Not Found` for missing cases, `422 Unprocessable Content` for invalid attachment metadata, rejection of invalid email content without creating database records or stored files, and Analysis service behavior including creation for an existing Correspondence, updating an existing Analysis without creating duplicates, clearing previously stored values, timestamp updates and missing-Correspondence handling, rollback behavior for failed Analysis creation and updates, and concurrent first-save protection.
+Tests cover reference rules, request validation, case creation, retrieval, partial update and deletion, 404 handling, jurisdiction-scoped uniqueness, conflicts detected during database writes, the Correspondence-to-Document relationship, local file storage, direct-document import, direct-upload API behavior, rollback/cleanup behavior when an import fails, deterministic `.eml` parsing including email metadata, plain-text body extraction, MIME attachments, unnamed attachments and a synthetic real-world email fixture, rejection of empty content, plain text, PDF content and unsupported character encodings, transactional email import into the database, storage of the original raw `.eml`, attachment-to-Document creation, idempotent handling of byte-identical email imports, missing-case validation, database/file cleanup when an email import fails, and email-import API behavior including `201 Created` for new imports, `200 OK` for byte-identical duplicates, `404 Not Found` for missing cases, `422 Unprocessable Content` for invalid attachment metadata, rejection of invalid email content without creating database records or stored files, and Analysis service behavior including creation for an existing Correspondence, updating an existing Analysis without creating duplicates, clearing previously stored values, timestamp updates and missing-Correspondence handling, rollback behavior for failed Analysis creation and updates, concurrent first-save protection, and Analysis API behavior including `201 Created` for the first save, `200 OK` when replacing an existing Analysis, `404 Not Found` for a missing Correspondence, and `422 Unprocessable Content` for invalid Analysis input.
 
 After adding migrations, apply them to both the application and test databases before running integration tests.
 

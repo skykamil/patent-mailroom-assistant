@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 from sqlalchemy.orm import Session
 
 from app.db.models.analysis import Analysis
@@ -5,11 +7,18 @@ from app.domain.exceptions import CorrespondenceNotFoundError
 from app.repositories import analysis_repository, correspondence_repository
 from app.schemas.analysis import AnalysisCreate
 
+
+@dataclass
+class AnalysisSaveResult:
+    analysis: Analysis
+    created: bool
+
+
 def save_analysis(
     db: Session,
     correspondence_id: int,
     analysis_data: AnalysisCreate,
-) -> Analysis:
+) -> AnalysisSaveResult:
     correspondence = correspondence_repository.get_correspondence_by_id_for_update(db, correspondence_id)
     if correspondence is None:
         raise CorrespondenceNotFoundError(f"Correspondence with id {correspondence_id} not found")
@@ -24,7 +33,10 @@ def save_analysis(
             db.rollback()
             raise
         db.refresh(existing_analysis)
-        return existing_analysis
+        return AnalysisSaveResult(
+            analysis=existing_analysis,
+            created=False,
+        )
     analysis_values = analysis_data.model_dump()
     analysis = Analysis(
         correspondence_id=correspondence_id,
@@ -37,4 +49,7 @@ def save_analysis(
         db.rollback()
         raise
     db.refresh(created_analysis)
-    return created_analysis
+    return AnalysisSaveResult(
+        analysis=created_analysis,
+        created=True,
+    )

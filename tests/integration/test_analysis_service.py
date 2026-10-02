@@ -36,29 +36,31 @@ def test_save_analysis_creates_analysis_for_existing_correspondence():
             calculated_due_date=date(2027, 1, 15)
         )
         result = analysis_service.save_analysis(db, correspondence.id, analysis_data)
-        assert result.id is not None
-        assert result.correspondence_id == correspondence.id
-        assert result.internal_reference == "PAT-CN-001"
-        assert result.jurisdiction == "CN"
-        assert result.application_number == "202611111111.1"
-        assert result.event_type == EventType.OFFICE_ACTION
-        assert result.office_action_type == OfficeActionType.OFFICE_ACTION_4MO
-        assert (result.document_date,
-                result.agent_notification_date,
-                result.agent_reported_due_date,
-                result.calculated_due_date,
+        analysis = result.analysis
+        assert analysis.id is not None
+        assert analysis.correspondence_id == correspondence.id
+        assert analysis.internal_reference == "PAT-CN-001"
+        assert analysis.jurisdiction == "CN"
+        assert analysis.application_number == "202611111111.1"
+        assert analysis.event_type == EventType.OFFICE_ACTION
+        assert analysis.office_action_type == OfficeActionType.OFFICE_ACTION_4MO
+        assert (analysis.document_date,
+                analysis.agent_notification_date,
+                analysis.agent_reported_due_date,
+                analysis.calculated_due_date,
         ) == (
             analysis_data.document_date,
             analysis_data.agent_notification_date,
             analysis_data.agent_reported_due_date,
             analysis_data.calculated_due_date,
         )
-        assert result.created_at is not None
-        assert result.updated_at is None
+        assert analysis.created_at is not None
+        assert analysis.updated_at is None
+        assert result.created is True
     finally:
         db.rollback()
         if result is not None:
-            db.delete(result)
+            db.delete(result.analysis)
         if correspondence is not None:
             db.delete(correspondence)
         db.commit()
@@ -86,7 +88,8 @@ def test_save_analysis_updates_existing_analysis():
             calculated_due_date=date(2027, 1, 15)
         )
         first_result = analysis_service.save_analysis(db, correspondence.id, analysis_data)
-        first_result_id = first_result.id
+        first_analysis = first_result.analysis
+        first_result_id = first_analysis.id
         updated_analysis_data = AnalysisCreate(
             internal_reference="PAT-CN-001",
             jurisdiction="CN",
@@ -98,10 +101,13 @@ def test_save_analysis_updates_existing_analysis():
             agent_reported_due_date=None,
             calculated_due_date=date(2027, 1, 15)
         )
+        assert first_result.created is True
         second_result = analysis_service.save_analysis(db, correspondence.id, updated_analysis_data)
-        assert second_result.id == first_result_id
-        assert second_result.agent_reported_due_date is None
-        assert second_result.updated_at is not None
+        second_analysis = second_result.analysis
+        assert second_result.created is False
+        assert second_analysis.id == first_result_id
+        assert second_analysis.agent_reported_due_date is None
+        assert second_analysis.updated_at is not None
         analysis_count = db.scalar(
             select(func.count()).select_from(Analysis).where(Analysis.correspondence_id == correspondence.id)
         )
@@ -109,7 +115,7 @@ def test_save_analysis_updates_existing_analysis():
     finally:
         db.rollback()
         if first_result is not None:
-            db.delete(first_result)
+            db.delete(first_result.analysis)
         if correspondence is not None:
             db.delete(correspondence)
         db.commit()
@@ -193,13 +199,13 @@ def test_save_analysis_rolls_back_when_update_commit_fails(monkeypatch):
         monkeypatch.setattr(db, "commit", fail_commit)
         with pytest.raises(RuntimeError, match="synthetic commit failure"):
             analysis_service.save_analysis(db, correspondence.id, updated_analysis_data)
-        db.refresh(first_result)
-        assert first_result.agent_reported_due_date == date(2027, 1, 15)
-        assert first_result.updated_at is None
+        db.refresh(first_result.analysis)
+        assert first_result.analysis.agent_reported_due_date == date(2027, 1, 15)
+        assert first_result.analysis.updated_at is None
     finally:
         db.rollback()
         if first_result is not None:
-            db.delete(first_result)
+            db.delete(first_result.analysis)
         if correspondence is not None:
             db.delete(correspondence)
         original_commit()
@@ -232,7 +238,7 @@ def test_save_analysis_prevents_duplicate_on_concurrent_first_save():
             try:
                 barrier.wait()
                 result = analysis_service.save_analysis(worker_db, correspondence_id, analysis_data)
-                return result.id
+                return result.analysis.id
             finally:
                 worker_db.close()
 
