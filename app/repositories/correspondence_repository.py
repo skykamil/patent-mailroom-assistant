@@ -17,3 +17,8 @@ def get_correspondence_by_source_sha256(db: Session, source_sha256: str) -> Corr
 def get_correspondence_by_id(db: Session, correspondence_id: int) -> Correspondence | None:
     statement = select(Correspondence).where(Correspondence.id == correspondence_id)
     return db.scalar(statement)
+
+
+def get_correspondence_by_id_for_update(db: Session, correspondence_id: int) -> Correspondence | None:
+    statement = select(Correspondence).where(Correspondence.id == correspondence_id).with_for_update()
+    return db.scalar(statement)
