@@ -237,3 +237,48 @@ def test_get_analysis_returns_404_when_analysis_does_not_exist():
             db.delete(correspondence)
         db.commit()
         db.close()
+
+
+def test_put_analysis_returns_422_for_unknown_field_without_changing_existing_analysis():
+    db = TestSessionLocal()
+    correspondence = None
+    try:
+        correspondence = Correspondence(import_type=ImportType.EMAIL)
+        db.add(correspondence)
+        db.commit()
+        db.refresh(correspondence)
+        first_put_response = client.put(
+            f"/correspondences/{correspondence.id}/analysis",
+            json={
+                "internal_reference": "PAT-CN-001",
+                "jurisdiction": "CN",
+                "agent_reported_due_date": "2027-01-15",
+            },
+        )
+        assert first_put_response.status_code == status.HTTP_201_CREATED
+        analysis_id = first_put_response.json()["id"]
+        second_put_response = client.put(
+            f"/correspondences/{correspondence.id}/analysis",
+            json={
+                "internal_reference": "PAT-CN-001",
+                "jurisdiction": "CN",
+                "agent_reported_due_date": "2027-02-15",
+                "unexpected_field": "synthetic",
+            },
+        )
+        assert second_put_response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        get_response = client.get(f"/correspondences/{correspondence.id}/analysis")
+        assert get_response.status_code == status.HTTP_200_OK
+        response_data = get_response.json()
+        assert response_data["id"] == analysis_id
+        assert response_data["agent_reported_due_date"] == "2027-01-15"
+    finally:
+        if correspondence is not None:
+            db.execute(
+                delete(Analysis).where(
+                    Analysis.correspondence_id == correspondence.id
+                )
+            )
+            db.delete(correspondence)
+        db.commit()
+        db.close()
