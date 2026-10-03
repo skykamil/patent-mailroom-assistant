@@ -20,3 +20,7 @@ class InvalidEmailError(Exception):
 
 class CorrespondenceNotFoundError(Exception):
     pass
+
+
+class AnalysisNotFoundError(Exception):
+    pass

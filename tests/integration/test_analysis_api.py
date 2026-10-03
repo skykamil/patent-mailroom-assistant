@@ -169,3 +169,71 @@ def test_put_analysis_returns_422_for_invalid_event_type():
             db.delete(correspondence)
         db.commit()
         db.close()
+
+
+def test_get_analysis_returns_analysis():
+    db = TestSessionLocal()
+    correspondence = None
+    try:
+        correspondence = Correspondence(import_type=ImportType.EMAIL)
+        db.add(correspondence)
+        db.commit()
+        db.refresh(correspondence)
+        put_response = client.put(
+            f"/correspondences/{correspondence.id}/analysis",
+            json={
+                "internal_reference": "PAT-CN-001",
+                "jurisdiction": "CN",
+            },
+        )
+        assert put_response.status_code == status.HTTP_201_CREATED
+        analysis_id = put_response.json()["id"]
+        response = client.get(f"/correspondences/{correspondence.id}/analysis")
+        assert response.status_code == status.HTTP_200_OK
+        response_data = response.json()
+        assert response_data["id"] == analysis_id
+        assert response_data["correspondence_id"] == correspondence.id
+        assert response_data["internal_reference"] == "PAT-CN-001"
+        assert response_data["jurisdiction"] == "CN"
+    finally:
+        if correspondence is not None:
+            db.execute(
+                delete(Analysis).where(
+                    Analysis.correspondence_id == correspondence.id
+                )
+            )
+            db.delete(correspondence)
+        db.commit()
+        db.close()
+
+
+def test_get_analysis_returns_404_when_correspondence_does_not_exist():
+    db = TestSessionLocal()
+    try:
+        max_correspondence_id = (
+            db.scalar(select(func.max(Correspondence.id))) or 0
+        )
+        missing_correspondence_id = max_correspondence_id + 1
+    finally:
+        db.close()
+    response = client.get(f"/correspondences/{missing_correspondence_id}/analysis")
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+    assert response.json()["detail"] == (f"Correspondence with id {missing_correspondence_id} not found")
+
+
+def test_get_analysis_returns_404_when_analysis_does_not_exist():
+    db = TestSessionLocal()
+    correspondence = None
+    try:
+        correspondence = Correspondence(import_type=ImportType.EMAIL)
+        db.add(correspondence)
+        db.commit()
+        db.refresh(correspondence)
+        response = client.get(f"/correspondences/{correspondence.id}/analysis")
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.json()["detail"] == f"Analysis for correspondence with id {correspondence.id} not found"
+    finally:
+        if correspondence is not None:
+            db.delete(correspondence)
+        db.commit()
+        db.close()
