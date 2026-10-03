@@ -1,9 +1,11 @@
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
 from app.db.models.analysis import Analysis
-from app.domain.exceptions import AnalysisNotFoundError, CorrespondenceNotFoundError
+from app.domain.analysis import AnalysisStatus
+from app.domain.exceptions import AnalysisAlreadyApprovedError, AnalysisNotFoundError, CorrespondenceNotFoundError
 from app.repositories import analysis_repository, correspondence_repository
 from app.schemas.analysis import AnalysisCreate
 
@@ -24,6 +26,10 @@ def save_analysis(
         raise CorrespondenceNotFoundError(f"Correspondence with id {correspondence_id} not found")
     existing_analysis = analysis_repository.get_analysis_by_correspondence_id(db, correspondence_id)
     if existing_analysis is not None:
+        if existing_analysis.status == AnalysisStatus.APPROVED:
+            raise AnalysisAlreadyApprovedError(
+                f"Analysis for correspondence with id {correspondence_id} is already approved"
+            )
         update_data = analysis_data.model_dump()
         for field_name, value in update_data.items():
             setattr(existing_analysis, field_name, value)
@@ -62,4 +68,23 @@ def get_analysis_by_correspondence_id(db: Session, correspondence_id: int) -> An
     analysis = analysis_repository.get_analysis_by_correspondence_id(db, correspondence_id)
     if analysis is None:
         raise AnalysisNotFoundError(f"Analysis for correspondence with id {correspondence_id} not found")
+    return analysis
+
+
+def approve_analysis(db: Session, correspondence_id: int) -> Analysis:
+    correspondence = correspondence_repository.get_correspondence_by_id_for_update(db, correspondence_id)
+    if correspondence is None:
+        raise CorrespondenceNotFoundError(f"Correspondence with id {correspondence_id} not found")
+    analysis = analysis_repository.get_analysis_by_correspondence_id(db, correspondence_id)
+    if analysis is None:
+        raise AnalysisNotFoundError(f"Analysis for correspondence with id {correspondence_id} not found")
+    if analysis.status != AnalysisStatus.APPROVED:
+        analysis.status = AnalysisStatus.APPROVED
+        analysis.approved_at = datetime.now(UTC)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    db.refresh(analysis)
     return analysis

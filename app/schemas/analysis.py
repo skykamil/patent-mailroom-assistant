@@ -2,7 +2,7 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.domain.analysis import EventType, OfficeActionType
+from app.domain.analysis import AnalysisStatus, EventType, OfficeActionType
 
 
 class AnalysisCreate(BaseModel):
@@ -33,3 +33,5 @@ class AnalysisRead(BaseModel):
     calculated_due_date: date | None = None
     created_at: datetime
     updated_at: datetime | None = None
+    status: AnalysisStatus
+    approved_at: datetime | None = None

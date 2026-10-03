@@ -5,7 +5,7 @@ from sqlalchemy import Date, DateTime, Enum, func, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.domain.analysis import EventType, OfficeActionType
+from app.domain.analysis import AnalysisStatus, EventType, OfficeActionType
 
 if TYPE_CHECKING:
     from app.db.models.correspondence import Correspondence
@@ -45,3 +45,13 @@ class Analysis(Base):
     calculated_due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, onupdate=func.now())
+    status: Mapped[AnalysisStatus] = mapped_column(
+        Enum(
+            AnalysisStatus,
+            name="analysis_status",
+            values_callable=lambda enum_class: [item.value for item in enum_class]
+        ),
+        nullable=False,
+        default=AnalysisStatus.PENDING_REVIEW,
+    )
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -2,7 +2,7 @@
 
 An educational backend project for processing patent correspondence, built with Python, FastAPI, SQLAlchemy and PostgreSQL.
 
-The intended workflow is to import an email, extract information from its contents and attachments, and prepare proposed updates for human review. The current implementation covers the case CRUD foundation, correspondence and document models, local file storage, direct-document import through the HTTP API, deterministic MIME parsing of `.eml` messages and their attachments, transactional email import through the HTTP API with source-file storage, attachment extraction and duplicate detection, and the database model, service layer and HTTP API for storing, retrieving and updating prepared analysis results. Automatic analysis generation, AI integration and approval workflows are not implemented yet.
+The intended workflow is to import an email, extract information from its contents and attachments, and prepare proposed updates for human review. The current implementation covers the case CRUD foundation, correspondence and document models, local file storage, direct-document import through the HTTP API, deterministic MIME parsing of `.eml` messages and their attachments, transactional email import through the HTTP API with source-file storage, attachment extraction and duplicate detection, and the database model, service layer and HTTP API for storing, retrieving, updating and approving prepared analysis results. Automatic analysis generation, AI integration and task creation from approved analyses are not implemented yet.
 
 ## Current functionality
 
@@ -25,9 +25,11 @@ The intended workflow is to import an email, extract information from its conten
 ### Analysis
 
 - Store at most one `Analysis` per `Correspondence`, containing proposed case identifiers, event classification, Office Action type, relevant dates and timestamps.
-- Create, retrieve or replace a prepared analysis result through the HTTP API.
+- Create, retrieve, replace and approve a prepared analysis result through the HTTP API.
+- Track analysis review state as `pending_review` or `approved`, including the approval timestamp.
+- Prevent further edits after an analysis has been approved.
 - Roll back failed analysis writes and serialize concurrent saves for the same correspondence to prevent duplicate records.
-- Accept analysis data supplied by the client. Automatic extraction, deadline calculation, AI integration and approval workflows are not implemented yet.
+- Accept analysis data supplied by the client. Automatic extraction, deadline calculation, AI integration and task creation from approved analyses are not implemented yet.
 
 ### Storage and database
 
@@ -141,6 +143,7 @@ These files are stored separately from the PostgreSQL Docker volume. Removing th
 | `POST` | `/correspondences/email-import` | Import an `.eml` message and create or return a `Correspondence` record |
 | `GET` | `/correspondences/{correspondence_id}/analysis` | Retrieve the `Analysis` for a `Correspondence` |
 | `PUT` | `/correspondences/{correspondence_id}/analysis` | Create or replace the `Analysis` for a `Correspondence` |
+| `POST` | `/correspondences/{correspondence_id}/analysis/approve` | Approve the `Analysis` for a `Correspondence` |
 
 The examples below use `1` as a placeholder database ID. Replace case IDs in `/cases/1` and `case_id=1` with the `id` returned when creating a case. Replace the correspondence ID in `/correspondences/1/analysis` with the `id` returned by an import.
 
@@ -282,11 +285,14 @@ This endpoint creates or fully replaces the editable analysis data. On an existi
 
 Subsequent saves keep the same analysis record and its ID. Each `Correspondence` can have at most one `Analysis`.
 
+A newly created analysis starts with `pending_review` status and no approval timestamp. Once approved, it can no longer be modified through this endpoint.
+
 | Status | Meaning |
 | --- | --- |
 | `201 Created` | The first analysis for this correspondence was saved |
 | `200 OK` | The existing analysis was replaced |
 | `404 Not Found` | The correspondence does not exist |
+| `409 Conflict` | The analysis has already been approved and can no longer be replaced |
 | `422 Unprocessable Content` | Request validation failed, including unknown fields |
 
 All analysis values are currently supplied by the client, including `calculated_due_date`. The application does not yet extract these values automatically, calculate deadlines or generate analysis using AI.
@@ -306,6 +312,25 @@ This endpoint returns the existing `Analysis` without modifying it.
 | Status | Meaning |
 | --- | --- |
 | `200 OK` | The analysis was retrieved successfully |
+| `404 Not Found` | The correspondence does not exist, or it has no analysis yet |
+
+### Approve analysis
+
+A reviewed analysis can be approved without a request body:
+
+```bash
+curl -i -X POST http://127.0.0.1:8000/correspondences/1/analysis/approve
+```
+
+Approval changes the analysis status from `pending_review` to `approved` and records `approved_at`.
+
+The operation is idempotent. Approving an already approved analysis returns the existing result without changing its original approval timestamp.
+
+After approval, the analysis can no longer be replaced through the `PUT` endpoint.
+
+| Status | Meaning |
+| --- | --- |
+| `200 OK` | The analysis was approved, or had already been approved |
 | `404 Not Found` | The correspondence does not exist, or it has no analysis yet |
 
 ## Tests
@@ -344,8 +369,8 @@ Tests cover:
 - **Storage and direct uploads:** local file storage, the `Correspondence`–`Document` relationship, document import, upload API behavior, and database rollback and file cleanup after failures.
 - **Email parsing:** metadata, plain-text body extraction, MIME attachments, unnamed attachments, case-insensitive headers and a synthetic email fixture. Invalid-input tests cover empty content, plain text, PDF content and unsupported character encodings.
 - **Email import:** original `.eml` storage, attachment records, byte-identical duplicate detection, missing-case validation, rollback and file cleanup. API tests cover new and duplicate imports, invalid attachment metadata, and rejection of invalid email content without creating records or files.
-- **Analysis service:** creation, retrieval, replacement without duplicates, clearing stored values, timestamp updates, missing-correspondence and missing-analysis handling, rollback after failed creates and updates, and concurrent first saves.
-- **Analysis API:** `201 Created` on the first save, `200 OK` on replacement and retrieval, `404 Not Found` for missing correspondences or analyses, and `422 Unprocessable Content` for invalid input.
+- **Analysis service:** creation, retrieval, replacement without duplicates, clearing stored values, timestamp updates, review-state handling, idempotent approval, prevention of edits after approval, missing-correspondence and missing-analysis handling, rollback after failed creates and updates, and concurrent first saves.
+- **Analysis API:** `201 Created` on the first save, `200 OK` on replacement, retrieval and approval, `404 Not Found` for missing correspondences or analyses, `409 Conflict` when replacing an approved analysis, and `422 Unprocessable Content` for invalid input.
 
 After adding migrations, apply them to both the application and test databases before running integration tests.
 
