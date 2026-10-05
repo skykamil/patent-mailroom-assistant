@@ -4,6 +4,8 @@ from sqlalchemy import delete
 
 from app.api.dependencies import get_db
 from app.db.models.case_relationship import CaseRelationship, CaseRelationshipType
+from app.db.models.event import Event
+from app.domain.analysis import EventType
 from app.main import app
 from app.services import case_service
 from tests.integration.db import TestSessionLocal, delete_case_by_internal_reference
@@ -360,3 +362,48 @@ def test_update_case_returns_422_for_unknown_field():
         },
     )
     assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+
+def test_delete_case_returns_409_when_case_has_event():
+    delete_case_by_internal_reference("PAT-CN-922")
+    event_id = None
+    try:
+        create_response = client.post(
+            "/cases",
+            json={
+                "internal_reference": "PAT-CN-922",
+            },
+        )
+        case_id = create_response.json()["id"]
+
+        db = TestSessionLocal()
+        try:
+            event = Event(
+                case_id=case_id,
+                event_type=EventType.OFFICE_ACTION,
+            )
+            db.add(event)
+            db.commit()
+            db.refresh(event)
+            event_id = event.id
+        finally:
+            db.close()
+
+        delete_response = client.delete(f"/cases/{case_id}")
+
+        assert delete_response.status_code == status.HTTP_409_CONFLICT
+        assert delete_response.json()["detail"] == (
+            f"Case with id {case_id} cannot be deleted because it is in use"
+        )
+    finally:
+        if event_id is not None:
+            db = TestSessionLocal()
+            try:
+                event = db.get(Event, event_id)
+                if event is not None:
+                    db.delete(event)
+                    db.commit()
+            finally:
+                db.close()
+
+        delete_case_by_internal_reference("PAT-CN-922")

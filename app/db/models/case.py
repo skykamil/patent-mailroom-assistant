@@ -29,4 +29,4 @@ class Case(Base):
     grant_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
     grant_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     agent_reference: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    events: Mapped[list["Event"]] = relationship(back_populates="case")
+    events: Mapped[list["Event"]] = relationship(back_populates="case", passive_deletes="all")

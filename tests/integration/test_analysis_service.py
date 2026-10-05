@@ -1,5 +1,5 @@
 import pytest
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from datetime import date
 from threading import Barrier
 
@@ -12,6 +12,7 @@ from app.db.models.event import Event
 from app.domain.analysis import AnalysisStatus, EventSelection, EventType, OfficeActionType
 from app.domain.correspondence import ImportType
 from app.domain.exceptions import AnalysisAlreadyApprovedError, AnalysisNotFoundError, CorrespondenceNotFoundError, EventNotFoundError, EventCaseMismatchError, EventTypeMismatchError
+from app.repositories import analysis_repository, correspondence_repository
 from app.schemas.analysis import AnalysisCreate, AnalysisEventSelectionUpdate
 from app.services import analysis_service
 from tests.integration.db import TestSessionLocal
@@ -899,3 +900,173 @@ def test_update_analysis_event_selection_raises_when_analysis_is_already_approve
             db.delete(correspondence)
         db.commit()
         db.close()
+
+
+def test_save_analysis_resets_event_selection_when_event_type_changes():
+    db = TestSessionLocal()
+    case = None
+    correspondence = None
+    event = None
+    try:
+        case = Case(
+            internal_reference="PAT-CN-920",
+            jurisdiction="CN",
+        )
+        db.add(case)
+        db.commit()
+        db.refresh(case)
+
+        correspondence = Correspondence(
+            import_type=ImportType.EMAIL,
+            case_id=case.id,
+        )
+        db.add(correspondence)
+        db.commit()
+        db.refresh(correspondence)
+
+        analysis_data = AnalysisCreate(
+            internal_reference="PAT-CN-920",
+            event_type=EventType.OFFICE_ACTION,
+        )
+        analysis_service.save_analysis(
+            db,
+            correspondence.id,
+            analysis_data,
+        )
+
+        event = Event(
+            case_id=case.id,
+            event_type=EventType.OFFICE_ACTION,
+        )
+        db.add(event)
+        db.commit()
+        db.refresh(event)
+
+        selection_data = AnalysisEventSelectionUpdate(
+            event_selection=EventSelection.EXISTING_EVENT,
+            event_id=event.id,
+        )
+        analysis_service.update_analysis_event_selection(
+            db,
+            correspondence.id,
+            selection_data,
+        )
+
+        updated_analysis_data = AnalysisCreate(
+            internal_reference="PAT-CN-920",
+            event_type=EventType.PUBLICATION,
+        )
+        result = analysis_service.save_analysis(
+            db,
+            correspondence.id,
+            updated_analysis_data,
+        )
+
+        assert result.analysis.event_type == EventType.PUBLICATION
+        assert result.analysis.event_selection == EventSelection.UNRESOLVED
+        assert result.analysis.event_id is None
+    finally:
+        db.rollback()
+        if correspondence is not None:
+            analyses = db.scalars(
+                select(Analysis).where(
+                    Analysis.correspondence_id == correspondence.id
+                )
+            ).all()
+            for analysis in analyses:
+                db.delete(analysis)
+
+        if event is not None:
+            db.delete(event)
+
+        if correspondence is not None:
+            db.delete(correspondence)
+
+        if case is not None:
+            db.delete(case)
+
+        db.commit()
+        db.close()
+
+
+def test_update_analysis_event_selection_waits_for_locked_correspondence():
+    setup_db = TestSessionLocal()
+    locking_db = TestSessionLocal()
+    correspondence = None
+    try:
+        correspondence = Correspondence(import_type=ImportType.EMAIL)
+        setup_db.add(correspondence)
+        setup_db.commit()
+        setup_db.refresh(correspondence)
+
+        analysis_data = AnalysisCreate(
+            internal_reference="PAT-CN-921",
+            event_type=EventType.OFFICE_ACTION,
+        )
+        analysis_service.save_analysis(
+            setup_db,
+            correspondence.id,
+            analysis_data,
+        )
+
+        locked_correspondence = (
+            correspondence_repository.get_correspondence_by_id_for_update(
+                locking_db,
+                correspondence.id,
+            )
+        )
+        assert locked_correspondence is not None
+
+        locked_analysis = (
+            analysis_repository.get_analysis_by_correspondence_id(
+                locking_db,
+                correspondence.id,
+            )
+        )
+        assert locked_analysis is not None
+
+        locked_analysis.status = AnalysisStatus.APPROVED
+
+        selection_data = AnalysisEventSelectionUpdate(
+            event_selection=EventSelection.NEW_EVENT,
+            event_id=None,
+        )
+
+        def update_selection():
+            worker_db = TestSessionLocal()
+            try:
+                return analysis_service.update_analysis_event_selection(
+                    worker_db,
+                    correspondence.id,
+                    selection_data,
+                )
+            finally:
+                worker_db.close()
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(update_selection)
+
+            with pytest.raises(FutureTimeoutError):
+                future.result(timeout=0.2)
+
+            locking_db.commit()
+
+            with pytest.raises(AnalysisAlreadyApprovedError):
+                future.result(timeout=5)
+    finally:
+        locking_db.rollback()
+        locking_db.close()
+
+        setup_db.rollback()
+        if correspondence is not None:
+            analyses = setup_db.scalars(
+                select(Analysis).where(
+                    Analysis.correspondence_id == correspondence.id
+                )
+            ).all()
+            for analysis in analyses:
+                setup_db.delete(analysis)
+            setup_db.delete(correspondence)
+
+        setup_db.commit()
+        setup_db.close()

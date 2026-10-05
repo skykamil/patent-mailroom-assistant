@@ -3,8 +3,8 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
-from app.db.models.analysis import Analysis, AnalysisStatus, EventSelection
-from app.domain.analysis import AnalysisStatus
+from app.db.models.analysis import Analysis
+from app.domain.analysis import AnalysisStatus, EventSelection
 from app.domain.exceptions import AnalysisAlreadyApprovedError, AnalysisNotFoundError, CorrespondenceNotFoundError, EventCaseMismatchError, EventNotFoundError, EventTypeMismatchError
 from app.repositories import analysis_repository, correspondence_repository, event_repository
 from app.schemas.analysis import AnalysisCreate, AnalysisEventSelectionUpdate
@@ -30,6 +30,9 @@ def save_analysis(
             raise AnalysisAlreadyApprovedError(
                 f"Analysis for correspondence with id {correspondence_id} is already approved"
             )
+        if existing_analysis.event_type != analysis_data.event_type:
+            existing_analysis.event_selection = EventSelection.UNRESOLVED
+            existing_analysis.event_id = None
         update_data = analysis_data.model_dump()
         for field_name, value in update_data.items():
             setattr(existing_analysis, field_name, value)
@@ -91,7 +94,7 @@ def approve_analysis(db: Session, correspondence_id: int) -> Analysis:
 
 
 def update_analysis_event_selection(db: Session, correspondence_id: int, selection_data: AnalysisEventSelectionUpdate) -> Analysis:
-    correspondence = correspondence_repository.get_correspondence_by_id(db, correspondence_id)
+    correspondence = correspondence_repository.get_correspondence_by_id_for_update(db, correspondence_id)
     if correspondence is None:
         raise CorrespondenceNotFoundError
     analysis = analysis_repository.get_analysis_by_correspondence_id(db, correspondence_id)
