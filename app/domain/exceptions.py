@@ -28,3 +28,15 @@ class AnalysisNotFoundError(Exception):
 
 class AnalysisAlreadyApprovedError(Exception):
     pass
+
+
+class EventNotFoundError(Exception):
+    pass
+
+
+class EventCaseMismatchError(Exception):
+    pass
+
+
+class EventTypeMismatchError(Exception):
+    pass

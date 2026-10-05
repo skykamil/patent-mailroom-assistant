@@ -3,11 +3,11 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
-from app.db.models.analysis import Analysis
+from app.db.models.analysis import Analysis, AnalysisStatus, EventSelection
 from app.domain.analysis import AnalysisStatus
-from app.domain.exceptions import AnalysisAlreadyApprovedError, AnalysisNotFoundError, CorrespondenceNotFoundError
-from app.repositories import analysis_repository, correspondence_repository
-from app.schemas.analysis import AnalysisCreate
+from app.domain.exceptions import AnalysisAlreadyApprovedError, AnalysisNotFoundError, CorrespondenceNotFoundError, EventCaseMismatchError, EventNotFoundError, EventTypeMismatchError
+from app.repositories import analysis_repository, correspondence_repository, event_repository
+from app.schemas.analysis import AnalysisCreate, AnalysisEventSelectionUpdate
 
 
 @dataclass
@@ -81,6 +81,35 @@ def approve_analysis(db: Session, correspondence_id: int) -> Analysis:
     if analysis.status != AnalysisStatus.APPROVED:
         analysis.status = AnalysisStatus.APPROVED
         analysis.approved_at = datetime.now(UTC)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    db.refresh(analysis)
+    return analysis
+
+
+def update_analysis_event_selection(db: Session, correspondence_id: int, selection_data: AnalysisEventSelectionUpdate) -> Analysis:
+    correspondence = correspondence_repository.get_correspondence_by_id(db, correspondence_id)
+    if correspondence is None:
+        raise CorrespondenceNotFoundError
+    analysis = analysis_repository.get_analysis_by_correspondence_id(db, correspondence_id)
+    if analysis is None:
+        raise AnalysisNotFoundError
+    if analysis.status == AnalysisStatus.APPROVED:
+        raise AnalysisAlreadyApprovedError
+    if selection_data.event_selection == EventSelection.EXISTING_EVENT:
+        assert selection_data.event_id is not None
+        event = event_repository.get_event_by_id(db, selection_data.event_id)
+        if event is None:
+            raise EventNotFoundError
+        if event.case_id != correspondence.case_id:
+            raise EventCaseMismatchError
+        if event.event_type != analysis.event_type:
+            raise EventTypeMismatchError
+    analysis.event_selection = selection_data.event_selection
+    analysis.event_id = selection_data.event_id
     try:
         db.commit()
     except Exception:

@@ -18,3 +18,9 @@ class OfficeActionType(StrEnum):
 class AnalysisStatus(StrEnum):
     PENDING_REVIEW = "pending_review"
     APPROVED = "approved"
+
+
+class EventSelection(StrEnum):
+    UNRESOLVED = "unresolved"
+    NEW_EVENT = "new_event"
+    EXISTING_EVENT = "existing_event"

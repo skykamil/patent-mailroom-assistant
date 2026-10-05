@@ -31,6 +31,17 @@ The intended workflow is to import an email, extract information from its conten
 - Roll back failed analysis writes and serialize concurrent saves for the same correspondence to prevent duplicate records.
 - Accept analysis data supplied by the client. Automatic extraction, deadline calculation, AI integration and task creation from approved analyses are not implemented yet.
 
+### Events and tasks
+
+- Store case-level `Event` records representing concrete business events, with an event type and creation timestamp.
+- Allow an editable `Analysis` to keep an event-selection decision as `unresolved`, `new_event` or `existing_event`.
+- Store an optional `event_id` on an analysis. Multiple analyses can reference the same event.
+- Validate existing-event selections against event existence, case ownership and event type before saving the review decision.
+- Prevent changes to the event-selection decision after the analysis has been approved.
+- Store `Task` records linked to an `Event`, including task type, name, due date and whether the task is primary.
+- Prevent duplicate primary tasks of the same type for the same event while allowing multiple non-primary tasks.
+- Automatic event matching, event creation during approval and task creation or update from approved analyses are not implemented yet.
+
 ### Storage and database
 
 - Store uploaded documents and email source files locally under generated filenames.
@@ -369,7 +380,7 @@ Tests cover:
 - **Storage and direct uploads:** local file storage, the `Correspondence`–`Document` relationship, document import, upload API behavior, and database rollback and file cleanup after failures.
 - **Email parsing:** metadata, plain-text body extraction, MIME attachments, unnamed attachments, case-insensitive headers and a synthetic email fixture. Invalid-input tests cover empty content, plain text, PDF content and unsupported character encodings.
 - **Email import:** original `.eml` storage, attachment records, byte-identical duplicate detection, missing-case validation, rollback and file cleanup. API tests cover new and duplicate imports, invalid attachment metadata, and rejection of invalid email content without creating records or files.
-- **Analysis service:** creation, retrieval, replacement without duplicates, clearing stored values, timestamp updates, review-state handling, idempotent approval, prevention of edits after approval, missing-correspondence and missing-analysis handling, rollback after failed creates and updates, and concurrent first saves.
+- **Analysis service:** creation, retrieval, replacement without duplicates, clearing stored values, timestamp updates, review-state handling, idempotent approval, prevention of edits after approval, missing-correspondence and missing-analysis handling, rollback after failed creates and updates, and concurrent first saves. Event-selection tests cover unresolved and new-event decisions, linking an existing event, clearing an earlier link, case and event-type mismatches, missing events, and prevention of changes after approval.
 - **Analysis API:** `201 Created` on the first save, `200 OK` on replacement, retrieval and approval, `404 Not Found` for missing correspondences or analyses, `409 Conflict` when replacing an approved analysis, and `422 Unprocessable Content` for invalid input.
 
 After adding migrations, apply them to both the application and test databases before running integration tests.

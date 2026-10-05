@@ -1,8 +1,9 @@
 from datetime import date, datetime
+from typing import Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.domain.analysis import AnalysisStatus, EventType, OfficeActionType
+from app.domain.analysis import AnalysisStatus, EventSelection, EventType, OfficeActionType
 
 
 class AnalysisCreate(BaseModel):
@@ -22,6 +23,8 @@ class AnalysisRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     correspondence_id: int
+    event_id: int | None = None
+    event_selection: EventSelection
     internal_reference: str | None = None
     jurisdiction: str | None = None
     application_number: str | None = None
@@ -35,3 +38,22 @@ class AnalysisRead(BaseModel):
     updated_at: datetime | None = None
     status: AnalysisStatus
     approved_at: datetime | None = None
+
+
+class AnalysisEventSelectionUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    event_selection: EventSelection
+    event_id: int | None = None
+
+    @model_validator(mode="after")
+    def validate_event_selection_and_id(self) -> Self:
+        if self.event_selection == EventSelection.UNRESOLVED:
+            if self.event_id is not None:
+                raise ValueError("event_id must be None when event_selection is unresolved")
+        if self.event_selection == EventSelection.NEW_EVENT:
+            if self.event_id is not None:
+                raise ValueError("event_id must be None when event_selection is new_event")
+        if self.event_selection == EventSelection.EXISTING_EVENT:
+            if self.event_id is None:
+                raise ValueError("event_id is required when event_selection is existing_event")
+        return self

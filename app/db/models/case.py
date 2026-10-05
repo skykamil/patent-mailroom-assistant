@@ -1,9 +1,13 @@
 from datetime import date
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Integer, String, Date, UniqueConstraint
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+
+if TYPE_CHECKING:
+    from app.db.models.event import Event
 
 
 class Case(Base):
@@ -25,3 +29,4 @@ class Case(Base):
     grant_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
     grant_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     agent_reference: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    events: Mapped[list["Event"]] = relationship(back_populates="case")
