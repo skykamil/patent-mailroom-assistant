@@ -25,4 +25,6 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Downgrade schema."""
-    pass
+    raise NotImplementedError(
+        "Downgrade is not supported: removing 'no_event' requires an explicit enum and data migration."
+    )

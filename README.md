@@ -1,8 +1,10 @@
 # Patent Mailroom Assistant
 
-An educational backend project for processing patent correspondence, built with Python, FastAPI, SQLAlchemy and PostgreSQL.
+An educational backend for importing patent correspondence and reviewing proposed analysis results, built with Python, FastAPI, SQLAlchemy and PostgreSQL.
 
-The intended workflow is to import an email, extract information from its contents and attachments, and prepare proposed updates for human review. The current implementation covers the case CRUD foundation, correspondence and document models, local file storage, direct-document import through the HTTP API, deterministic MIME parsing of `.eml` messages and their attachments, transactional email import through the HTTP API with source-file storage, attachment extraction and duplicate detection, and the database model, service layer and HTTP API for storing, retrieving, updating, reviewing event-selection decisions and approving prepared analysis results. Automatic analysis generation, AI integration and task creation from approved analyses are not implemented yet.
+The application supports case management, document and email imports, and manual review and approval of client-supplied analyses. Approval can create a new case-level event, link an existing event, or explicitly proceed without an event.
+
+Automatic analysis generation, AI integration, deadline calculation and task creation from approved analyses are not implemented yet.
 
 ## Current functionality
 
@@ -17,7 +19,7 @@ The intended workflow is to import an email, extract information from its conten
 ### Correspondence import
 
 - Import one or more documents through the direct-upload API, creating a `Correspondence` and related `Document` records.
-- Parse and import `.eml` messages, extracting email metadata, preferring plain-text body content with an HTML fallback, and MIME attachments.
+- Parse and import `.eml` messages, extracting email metadata, body content and MIME attachments.
 - Store the original `.eml` file and its SHA-256 source hash, with attachments stored as related `Document` records.
 - Return the existing `Correspondence` for byte-identical email imports without changing its case association.
 - Reject invalid email content, unsupported character encodings and invalid attachment metadata before storing files or database records.
@@ -29,7 +31,7 @@ The intended workflow is to import an email, extract information from its conten
 - Track analysis review state as `pending_review` or `approved`, including the approval timestamp.
 - Prevent further edits after an analysis has been approved.
 - Roll back failed analysis writes and serialize concurrent saves for the same correspondence to prevent duplicate records.
-- Accept analysis data supplied by the client. Automatic extraction, deadline calculation, AI integration and task creation from approved analyses are not implemented yet.
+- Accept analysis data supplied by the client for manual review.
 
 ### Events and tasks
 
@@ -318,7 +320,7 @@ If the analysis `event_type` changes while the analysis is still editable, any e
 | `409 Conflict` | The analysis has already been approved and can no longer be replaced |
 | `422 Unprocessable Content` | Request validation failed, including unknown fields |
 
-All analysis values are currently supplied by the client, including `calculated_due_date`. The application does not yet extract these values automatically, calculate deadlines or generate analysis using AI.
+All analysis values are supplied by the client, including `calculated_due_date`, which the application does not calculate.
 
 Saving an analysis stores proposed data only. It does not update the associated case or approve the proposed changes.
 
@@ -351,7 +353,7 @@ curl -i -X PUT http://127.0.0.1:8000/correspondences/1/analysis/event-selection 
   }'
 ```
 
-The supported states are:
+The event-selection endpoint accepts the following combinations:
 
 - `unresolved` with no `event_id`
 - `new_event` with no `event_id`
@@ -371,7 +373,7 @@ curl -i -X PUT http://127.0.0.1:8000/correspondences/1/analysis/event-selection 
 
 An `existing_event` selection is accepted only when the event exists, belongs to the same case as the correspondence and has the same event type as the analysis.
 
-Selecting `new_event` records the review decision without immediately creating an `Event`. The event is created only when the analysis is approved.
+Selecting `new_event` records the review decision without immediately creating an `Event`. On approval, the application creates the event and stores its ID in `event_id`. The approved analysis retains `event_selection="new_event"` to record how the event was selected.
 
 Selecting `no_event` records an explicit decision that the correspondence does not represent a business event. Approval then proceeds without creating or linking an `Event`.
 
@@ -392,7 +394,7 @@ A reviewed analysis can be approved without a request body:
 curl -i -X POST http://127.0.0.1:8000/correspondences/1/analysis/approve
 ```
 
-Approval changes the analysis status from `pending_review` to `approved` and records `approved_at`.
+Approval changes the analysis status from `pending_review` to `approved` and records `approved_at`. Approval does not copy proposed analysis values into the associated `Case` or create any `Task` records.
 
 The event-selection decision must be resolved before approval:
 
@@ -447,7 +449,7 @@ Tests cover:
 
 - **Cases:** reference rules, request validation, creation, retrieval, partial updates, deletion, missing-record handling, jurisdiction-scoped uniqueness and conflicts detected during database writes.
 - **Storage and direct uploads:** local file storage, the `Correspondence`–`Document` relationship, document import, upload API behavior, and database rollback and file cleanup after failures.
-- **Email parsing:** metadata, plain-text body extraction, MIME attachments, unnamed attachments, case-insensitive headers and a synthetic email fixture. Invalid-input tests cover empty content, plain text, PDF content and unsupported character encodings.
+- **Email parsing:** metadata, plain-text and HTML-only body extraction, MIME attachments including attached emails and multipart content, unnamed attachments, case-insensitive headers and a synthetic email fixture. Invalid-input tests cover empty content, plain text, PDF content and unsupported character encodings.
 - **Email import:** original `.eml` storage, attachment records, byte-identical duplicate detection, missing-case validation, rollback and file cleanup. API tests cover new and duplicate imports, invalid attachment metadata, and rejection of invalid email content without creating records or files.
 - **Analysis service:** creation, retrieval, replacement without duplicates, clearing stored values, timestamp updates, review-state handling, prevention of edits after approval, missing-correspondence and missing-analysis handling, rollback after failed writes, and concurrency handling. Event-selection and approval tests cover `unresolved`, `new_event`, `existing_event` and `no_event`, existing-event validation and revalidation, new-event creation and linkage, missing approval prerequisites, transactional rollback, idempotent repeated approval and concurrent approval without duplicate events.
 - **Analysis API:** `201 Created` on the first save, `200 OK` on replacement, retrieval and approval, event-selection updates for `unresolved`, `new_event`, `existing_event` and `no_event`, `404 Not Found` for missing resources, `409 Conflict` for approved analyses, unresolved approval decisions, missing new-event prerequisites and invalid event links, and `422 Unprocessable Content` for invalid input and invalid event-selection combinations.
