@@ -40,3 +40,15 @@ class EventCaseMismatchError(Exception):
 
 class EventTypeMismatchError(Exception):
     pass
+
+
+class AnalysisEventSelectionUnresolvedError(Exception):
+    pass
+
+
+class CorrespondenceCaseRequiredError(Exception):
+    pass
+
+
+class AnalysisEventTypeRequiredError(Exception):
+    pass

@@ -1,3 +1,4 @@
+import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
 from sqlalchemy import delete, func, select
@@ -303,6 +304,13 @@ def test_post_approve_analysis_returns_approved_analysis():
                 "jurisdiction": "CN",
             },
         )
+        selection_response = client.put(
+            f"/correspondences/{correspondence.id}/analysis/event-selection",
+            json={
+                "event_selection": EventSelection.NO_EVENT.value,
+            },
+        )
+        assert selection_response.status_code == status.HTTP_200_OK
         assert put_response.status_code == status.HTTP_201_CREATED
         response = client.post(f"/correspondences/{correspondence.id}/analysis/approve")
         assert response.status_code == status.HTTP_200_OK
@@ -337,6 +345,13 @@ def test_post_approve_analysis_does_not_change_approved_at_when_already_approved
                 "jurisdiction": "CN",
             },
         )
+        selection_response = client.put(
+            f"/correspondences/{correspondence.id}/analysis/event-selection",
+            json={
+                "event_selection": EventSelection.NO_EVENT.value,
+            },
+        )
+        assert selection_response.status_code == status.HTTP_200_OK
         assert put_response.status_code == status.HTTP_201_CREATED
         first_response = client.post(f"/correspondences/{correspondence.id}/analysis/approve")
         assert first_response.status_code == status.HTTP_200_OK
@@ -406,6 +421,13 @@ def test_put_analysis_returns_409_when_analysis_is_already_approved():
                 "agent_reported_due_date": "2027-01-15",
             },
         )
+        selection_response = client.put(
+            f"/correspondences/{correspondence.id}/analysis/event-selection",
+            json={
+                "event_selection": EventSelection.NO_EVENT.value,
+            },
+        )
+        assert selection_response.status_code == status.HTTP_200_OK
         assert first_put_response.status_code == status.HTTP_201_CREATED
         approve_response = client.post(f"/correspondences/{correspondence.id}/analysis/approve")
         assert approve_response.status_code == status.HTTP_200_OK
@@ -855,6 +877,13 @@ def test_put_analysis_event_selection_returns_409_when_analysis_is_approved():
                 "event_type": EventType.OFFICE_ACTION.value,
             },
         )
+        selection_response = client.put(
+            f"/correspondences/{correspondence.id}/analysis/event-selection",
+            json={
+                "event_selection": EventSelection.NO_EVENT.value,
+            },
+        )
+        assert selection_response.status_code == status.HTTP_200_OK
         assert analysis_response.status_code == status.HTTP_201_CREATED
 
         approve_response = client.post(
@@ -929,5 +958,216 @@ def test_put_analysis_event_selection_returns_422_for_existing_event_without_eve
                 )
             )
             db.delete(correspondence)
+        db.commit()
+        db.close()
+
+
+def test_put_analysis_event_selection_sets_no_event():
+    db = TestSessionLocal()
+    correspondence = None
+    try:
+        correspondence = Correspondence(import_type=ImportType.EMAIL)
+        db.add(correspondence)
+        db.commit()
+        db.refresh(correspondence)
+
+        analysis_response = client.put(
+            f"/correspondences/{correspondence.id}/analysis",
+            json={
+                "internal_reference": "PAT-CN-001",
+                "event_type": EventType.OFFICE_ACTION.value,
+            },
+        )
+        assert analysis_response.status_code == status.HTTP_201_CREATED
+
+        response = client.put(
+            f"/correspondences/{correspondence.id}/analysis/event-selection",
+            json={
+                "event_selection": EventSelection.NO_EVENT.value,
+            },
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        response_data = response.json()
+        assert response_data["event_selection"] == EventSelection.NO_EVENT.value
+        assert response_data["event_id"] is None
+    finally:
+        if correspondence is not None:
+            db.execute(
+                delete(Analysis).where(
+                    Analysis.correspondence_id == correspondence.id
+                )
+            )
+            db.delete(correspondence)
+        db.commit()
+        db.close()
+
+
+def test_post_approve_analysis_returns_409_when_event_selection_is_unresolved():
+    db = TestSessionLocal()
+    correspondence = None
+    try:
+        correspondence = Correspondence(import_type=ImportType.EMAIL)
+        db.add(correspondence)
+        db.commit()
+        db.refresh(correspondence)
+
+        analysis_response = client.put(
+            f"/correspondences/{correspondence.id}/analysis",
+            json={
+                "internal_reference": "PAT-CN-001",
+                "jurisdiction": "CN",
+            },
+        )
+        assert analysis_response.status_code == status.HTTP_201_CREATED
+
+        response = client.post(
+            f"/correspondences/{correspondence.id}/analysis/approve"
+        )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.json()["detail"] == (
+            f"Analysis for correspondence with id {correspondence.id} "
+            "has unresolved event selection"
+        )
+
+        get_response = client.get(
+            f"/correspondences/{correspondence.id}/analysis"
+        )
+
+        assert get_response.status_code == status.HTTP_200_OK
+        response_data = get_response.json()
+        assert response_data["status"] == AnalysisStatus.PENDING_REVIEW.value
+        assert response_data["approved_at"] is None
+    finally:
+        if correspondence is not None:
+            db.execute(
+                delete(Analysis).where(
+                    Analysis.correspondence_id == correspondence.id
+                )
+            )
+            db.delete(correspondence)
+        db.commit()
+        db.close()
+
+
+@pytest.mark.parametrize(
+    ("create_case", "event_type", "expected_error"),
+    [
+        (
+            False,
+            EventType.OFFICE_ACTION.value,
+            "case_required",
+        ),
+        (
+            True,
+            None,
+            "event_type_required",
+        ),
+    ],
+)
+def test_post_approve_analysis_returns_409_for_new_event_precondition(
+    create_case,
+    event_type,
+    expected_error,
+):
+    db = TestSessionLocal()
+    case = None
+    correspondence = None
+
+    try:
+        if create_case:
+            case = Case(
+                internal_reference="PAT-CN-961",
+                jurisdiction="CN",
+            )
+            db.add(case)
+            db.commit()
+            db.refresh(case)
+
+        correspondence = Correspondence(
+            import_type=ImportType.EMAIL,
+            case_id=case.id if case is not None else None,
+        )
+        db.add(correspondence)
+        db.commit()
+        db.refresh(correspondence)
+
+        analysis_payload = {
+            "internal_reference": "PAT-CN-961",
+            "event_type": event_type,
+        }
+
+        analysis_response = client.put(
+            f"/correspondences/{correspondence.id}/analysis",
+            json=analysis_payload,
+        )
+        assert analysis_response.status_code == status.HTTP_201_CREATED
+
+        selection_response = client.put(
+            f"/correspondences/{correspondence.id}/analysis/event-selection",
+            json={
+                "event_selection": EventSelection.NEW_EVENT.value,
+            },
+        )
+        assert selection_response.status_code == status.HTTP_200_OK
+
+        response = client.post(
+            f"/correspondences/{correspondence.id}/analysis/approve"
+        )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+
+        if expected_error == "case_required":
+            assert response.json()["detail"] == (
+                f"Correspondence with id {correspondence.id} "
+                "must be assigned to a case before creating a new event"
+            )
+        else:
+            assert response.json()["detail"] == (
+                f"Analysis for correspondence with id {correspondence.id} "
+                "must have an event type before creating a new event"
+            )
+
+        get_response = client.get(
+            f"/correspondences/{correspondence.id}/analysis"
+        )
+
+        assert get_response.status_code == status.HTTP_200_OK
+        assert (
+            get_response.json()["status"]
+            == AnalysisStatus.PENDING_REVIEW.value
+        )
+        assert get_response.json()["event_id"] is None
+
+    finally:
+        db.rollback()
+
+        if correspondence is not None:
+            db.execute(
+                delete(Analysis).where(
+                    Analysis.correspondence_id == correspondence.id
+                )
+            )
+
+        if case is not None:
+            db.execute(
+                delete(Event).where(Event.case_id == case.id)
+            )
+
+        if correspondence is not None:
+            db.execute(
+                delete(Correspondence).where(
+                    Correspondence.id == correspondence.id
+                )
+            )
+
+        if case is not None:
+            db.execute(
+                delete(Case).where(
+                    Case.id == case.id
+                )
+            )
+
         db.commit()
         db.close()

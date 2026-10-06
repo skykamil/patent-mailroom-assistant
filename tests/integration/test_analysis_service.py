@@ -1,9 +1,9 @@
 import pytest
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
-from datetime import date
+from datetime import UTC, date, datetime
 from threading import Barrier
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 from app.db.models.analysis import Analysis
 from app.db.models.case import Case
@@ -11,8 +11,8 @@ from app.db.models.correspondence import Correspondence
 from app.db.models.event import Event
 from app.domain.analysis import AnalysisStatus, EventSelection, EventType, OfficeActionType
 from app.domain.correspondence import ImportType
-from app.domain.exceptions import AnalysisAlreadyApprovedError, AnalysisNotFoundError, CorrespondenceNotFoundError, EventNotFoundError, EventCaseMismatchError, EventTypeMismatchError
-from app.repositories import analysis_repository, correspondence_repository
+from app.domain.exceptions import AnalysisAlreadyApprovedError, AnalysisEventSelectionUnresolvedError, AnalysisEventTypeRequiredError, AnalysisNotFoundError, CorrespondenceCaseRequiredError, CorrespondenceNotFoundError, EventNotFoundError, EventCaseMismatchError, EventTypeMismatchError
+from app.repositories import analysis_repository, correspondence_repository, event_repository
 from app.schemas.analysis import AnalysisCreate, AnalysisEventSelectionUpdate
 from app.services import analysis_service
 from tests.integration.db import TestSessionLocal
@@ -348,6 +348,16 @@ def test_approve_analysis_sets_status_and_approved_at():
             agent_reported_due_date=date(2027, 1, 15),
         )
         analysis_service.save_analysis(db, correspondence.id, analysis_data)
+        selection_data = AnalysisEventSelectionUpdate(
+            event_selection=EventSelection.NO_EVENT,
+            event_id=None,
+        )
+
+        analysis_service.update_analysis_event_selection(
+            db,
+            correspondence.id,
+            selection_data,
+        )
         result = analysis_service.approve_analysis(db, correspondence.id)
         assert result.status == AnalysisStatus.APPROVED
         assert result.approved_at is not None
@@ -376,6 +386,16 @@ def test_approve_analysis_does_not_change_approved_at_when_already_approved():
             agent_reported_due_date=date(2027, 1, 15),
         )
         analysis_service.save_analysis(db, correspondence.id, analysis_data)
+        selection_data = AnalysisEventSelectionUpdate(
+            event_selection=EventSelection.NO_EVENT,
+            event_id=None,
+        )
+
+        analysis_service.update_analysis_event_selection(
+            db,
+            correspondence.id,
+            selection_data,
+        )
         first_result = analysis_service.approve_analysis(db, correspondence.id)
         first_approved_at = first_result.approved_at
         second_result = analysis_service.approve_analysis(db, correspondence.id)
@@ -427,6 +447,16 @@ def test_save_analysis_raises_when_analysis_is_already_approved():
             agent_reported_due_date=date(2027, 1, 15),
         )
         analysis_service.save_analysis(db, correspondence.id, analysis_data)
+        selection_data = AnalysisEventSelectionUpdate(
+            event_selection=EventSelection.NO_EVENT,
+            event_id=None,
+        )
+
+        analysis_service.update_analysis_event_selection(
+            db,
+            correspondence.id,
+            selection_data,
+        )
         analysis_service.approve_analysis(db, correspondence.id)
         updated_analysis_data = AnalysisCreate(
             internal_reference="PAT-CN-001",
@@ -874,6 +904,16 @@ def test_update_analysis_event_selection_raises_when_analysis_is_already_approve
             correspondence.id,
             analysis_data,
         )
+        selection_data = AnalysisEventSelectionUpdate(
+            event_selection=EventSelection.NO_EVENT,
+            event_id=None,
+        )
+
+        analysis_service.update_analysis_event_selection(
+            db,
+            correspondence.id,
+            selection_data,
+        )
         analysis_service.approve_analysis(db, correspondence.id)
 
         selection_data = AnalysisEventSelectionUpdate(
@@ -1070,3 +1110,1044 @@ def test_update_analysis_event_selection_waits_for_locked_correspondence():
 
         setup_db.commit()
         setup_db.close()
+
+
+def test_approve_analysis_raises_when_event_selection_is_unresolved():
+    db = TestSessionLocal()
+    correspondence = None
+    try:
+        correspondence = Correspondence(import_type=ImportType.EMAIL)
+        db.add(correspondence)
+        db.commit()
+        db.refresh(correspondence)
+
+        analysis_data = AnalysisCreate(
+            internal_reference="PAT-CN-001",
+            jurisdiction="CN",
+        )
+        analysis_service.save_analysis(
+            db,
+            correspondence.id,
+            analysis_data,
+        )
+
+        with pytest.raises(
+            AnalysisEventSelectionUnresolvedError,
+            match=(
+                f"Analysis for correspondence with id {correspondence.id} "
+                "has unresolved event selection"
+            ),
+        ):
+            analysis_service.approve_analysis(
+                db,
+                correspondence.id,
+            )
+
+        analysis = analysis_service.get_analysis_by_correspondence_id(
+            db,
+            correspondence.id,
+        )
+        assert analysis.status == AnalysisStatus.PENDING_REVIEW
+        assert analysis.approved_at is None
+    finally:
+        db.rollback()
+        if correspondence is not None:
+            analyses = db.scalars(
+                select(Analysis).where(
+                    Analysis.correspondence_id == correspondence.id
+                )
+            ).all()
+            for analysis in analyses:
+                db.delete(analysis)
+            db.delete(correspondence)
+        db.commit()
+        db.close()
+
+
+def test_approve_analysis_creates_and_links_new_event():
+    db = TestSessionLocal()
+    case = None
+    correspondence = None
+    created_event = None
+
+    try:
+        case = Case(
+            internal_reference="PAT-CN-950",
+            jurisdiction="CN",
+        )
+        db.add(case)
+        db.commit()
+        db.refresh(case)
+
+        correspondence = Correspondence(
+            import_type=ImportType.EMAIL,
+            case_id=case.id,
+        )
+        db.add(correspondence)
+        db.commit()
+        db.refresh(correspondence)
+
+        analysis_data = AnalysisCreate(
+            internal_reference="PAT-CN-950",
+            event_type=EventType.OFFICE_ACTION,
+        )
+        analysis_service.save_analysis(
+            db,
+            correspondence.id,
+            analysis_data,
+        )
+
+        selection_data = AnalysisEventSelectionUpdate(
+            event_selection=EventSelection.NEW_EVENT,
+            event_id=None,
+        )
+        analysis_service.update_analysis_event_selection(
+            db,
+            correspondence.id,
+            selection_data,
+        )
+
+        result = analysis_service.approve_analysis(
+            db,
+            correspondence.id,
+        )
+
+        assert result.status == AnalysisStatus.APPROVED
+        assert result.event_selection == EventSelection.NEW_EVENT
+        assert result.event_id is not None
+
+        created_event = event_repository.get_event_by_id(
+            db,
+            result.event_id,
+        )
+
+        assert created_event is not None
+        assert created_event.case_id == case.id
+        assert created_event.event_type == EventType.OFFICE_ACTION
+
+    finally:
+        db.rollback()
+
+        if correspondence is not None:
+            analyses = db.scalars(
+                select(Analysis).where(
+                    Analysis.correspondence_id == correspondence.id
+                )
+            ).all()
+
+            for analysis in analyses:
+                db.delete(analysis)
+
+        if created_event is not None:
+            db.delete(created_event)
+
+        if correspondence is not None:
+            db.delete(correspondence)
+
+        if case is not None:
+            db.delete(case)
+
+        db.commit()
+        db.close()
+
+
+def test_approve_analysis_new_event_does_not_create_duplicate_on_repeat():
+    db = TestSessionLocal()
+    case = None
+    correspondence = None
+    created_event = None
+
+    try:
+        case = Case(
+            internal_reference="PAT-CN-951",
+            jurisdiction="CN",
+        )
+        db.add(case)
+        db.commit()
+        db.refresh(case)
+
+        correspondence = Correspondence(
+            import_type=ImportType.EMAIL,
+            case_id=case.id,
+        )
+        db.add(correspondence)
+        db.commit()
+        db.refresh(correspondence)
+
+        analysis_data = AnalysisCreate(
+            internal_reference="PAT-CN-951",
+            event_type=EventType.OFFICE_ACTION,
+        )
+        analysis_service.save_analysis(
+            db,
+            correspondence.id,
+            analysis_data,
+        )
+
+        selection_data = AnalysisEventSelectionUpdate(
+            event_selection=EventSelection.NEW_EVENT,
+            event_id=None,
+        )
+        analysis_service.update_analysis_event_selection(
+            db,
+            correspondence.id,
+            selection_data,
+        )
+
+        first_result = analysis_service.approve_analysis(
+            db,
+            correspondence.id,
+        )
+
+        first_event_id = first_result.event_id
+        assert first_event_id is not None
+        first_approved_at = first_result.approved_at
+
+        second_result = analysis_service.approve_analysis(
+            db,
+            correspondence.id,
+        )
+
+        assert second_result.event_id == first_event_id
+        assert second_result.approved_at == first_approved_at
+
+        event_count = db.scalar(
+            select(func.count())
+            .select_from(Event)
+            .where(Event.case_id == case.id)
+        )
+
+        assert event_count == 1
+
+        created_event = event_repository.get_event_by_id(
+            db,
+            first_event_id,
+        )
+
+    finally:
+        db.rollback()
+
+        if correspondence is not None:
+            analyses = db.scalars(
+                select(Analysis).where(
+                    Analysis.correspondence_id == correspondence.id
+                )
+            ).all()
+
+            for analysis in analyses:
+                db.delete(analysis)
+
+        if created_event is not None:
+            db.delete(created_event)
+
+        if correspondence is not None:
+            db.delete(correspondence)
+
+        if case is not None:
+            db.delete(case)
+
+        db.commit()
+        db.close()
+
+
+def test_approve_analysis_does_not_backfill_historical_approved_unresolved_analysis():
+    db = TestSessionLocal()
+    correspondence = None
+
+    try:
+        correspondence = Correspondence(import_type=ImportType.EMAIL)
+        db.add(correspondence)
+        db.commit()
+        db.refresh(correspondence)
+
+        analysis = Analysis(
+            correspondence_id=correspondence.id,
+            internal_reference="PAT-CN-952",
+            event_selection=EventSelection.UNRESOLVED,
+            status=AnalysisStatus.APPROVED,
+            approved_at=datetime.now(UTC),
+        )
+        db.add(analysis)
+        db.commit()
+        db.refresh(analysis)
+
+        original_approved_at = analysis.approved_at
+
+        result = analysis_service.approve_analysis(
+            db,
+            correspondence.id,
+        )
+
+        assert result.status == AnalysisStatus.APPROVED
+        assert result.approved_at == original_approved_at
+        assert result.event_selection == EventSelection.UNRESOLVED
+        assert result.event_id is None
+
+    finally:
+        db.rollback()
+
+        if correspondence is not None:
+            analyses = db.scalars(
+                select(Analysis).where(
+                    Analysis.correspondence_id == correspondence.id
+                )
+            ).all()
+
+            for analysis in analyses:
+                db.delete(analysis)
+
+            db.delete(correspondence)
+
+        db.commit()
+        db.close()
+
+
+def test_approve_analysis_new_event_raises_when_correspondence_has_no_case():
+    db = TestSessionLocal()
+    correspondence = None
+
+    try:
+        correspondence = Correspondence(
+            import_type=ImportType.EMAIL,
+        )
+        db.add(correspondence)
+        db.commit()
+        db.refresh(correspondence)
+
+        analysis_data = AnalysisCreate(
+            internal_reference="PAT-CN-953",
+            event_type=EventType.OFFICE_ACTION,
+        )
+        analysis_service.save_analysis(
+            db,
+            correspondence.id,
+            analysis_data,
+        )
+
+        selection_data = AnalysisEventSelectionUpdate(
+            event_selection=EventSelection.NEW_EVENT,
+            event_id=None,
+        )
+        analysis_service.update_analysis_event_selection(
+            db,
+            correspondence.id,
+            selection_data,
+        )
+
+        event_count_before = db.scalar(
+            select(func.count()).select_from(Event)
+        )
+
+        with pytest.raises(
+            CorrespondenceCaseRequiredError,
+            match=(
+                f"Correspondence with id {correspondence.id} "
+                "must be assigned to a case before creating a new event"
+            ),
+        ):
+            analysis_service.approve_analysis(
+                db,
+                correspondence.id,
+            )
+
+        analysis = analysis_service.get_analysis_by_correspondence_id(
+            db,
+            correspondence.id,
+        )
+
+        assert analysis.status == AnalysisStatus.PENDING_REVIEW
+        assert analysis.approved_at is None
+        assert analysis.event_selection == EventSelection.NEW_EVENT
+        assert analysis.event_id is None
+
+        event_count_after = db.scalar(
+            select(func.count()).select_from(Event)
+        )
+
+        assert event_count_after == event_count_before
+
+    finally:
+        db.rollback()
+
+        if correspondence is not None:
+            analyses = db.scalars(
+                select(Analysis).where(
+                    Analysis.correspondence_id == correspondence.id
+                )
+            ).all()
+
+            for analysis in analyses:
+                db.delete(analysis)
+
+            db.delete(correspondence)
+
+        db.commit()
+        db.close()
+
+
+def test_approve_analysis_new_event_raises_when_event_type_is_missing():
+    db = TestSessionLocal()
+    case = None
+    correspondence = None
+
+    try:
+        case = Case(
+            internal_reference="PAT-CN-954",
+            jurisdiction="CN",
+        )
+        db.add(case)
+        db.commit()
+        db.refresh(case)
+
+        correspondence = Correspondence(
+            import_type=ImportType.EMAIL,
+            case_id=case.id,
+        )
+        db.add(correspondence)
+        db.commit()
+        db.refresh(correspondence)
+
+        analysis_data = AnalysisCreate(
+            internal_reference="PAT-CN-954",
+            event_type=None,
+        )
+        analysis_service.save_analysis(
+            db,
+            correspondence.id,
+            analysis_data,
+        )
+
+        selection_data = AnalysisEventSelectionUpdate(
+            event_selection=EventSelection.NEW_EVENT,
+            event_id=None,
+        )
+        analysis_service.update_analysis_event_selection(
+            db,
+            correspondence.id,
+            selection_data,
+        )
+
+        event_count_before = db.scalar(
+            select(func.count())
+            .select_from(Event)
+            .where(Event.case_id == case.id)
+        )
+
+        with pytest.raises(
+            AnalysisEventTypeRequiredError,
+            match=(
+                f"Analysis for correspondence with id {correspondence.id} "
+                "must have an event type before creating a new event"
+            ),
+        ):
+            analysis_service.approve_analysis(
+                db,
+                correspondence.id,
+            )
+
+        analysis = analysis_service.get_analysis_by_correspondence_id(
+            db,
+            correspondence.id,
+        )
+
+        assert analysis.status == AnalysisStatus.PENDING_REVIEW
+        assert analysis.approved_at is None
+        assert analysis.event_selection == EventSelection.NEW_EVENT
+        assert analysis.event_id is None
+
+        event_count_after = db.scalar(
+            select(func.count())
+            .select_from(Event)
+            .where(Event.case_id == case.id)
+        )
+
+        assert event_count_after == event_count_before
+
+    finally:
+        db.rollback()
+
+        if correspondence is not None:
+            db.execute(
+                delete(Analysis).where(
+                    Analysis.correspondence_id == correspondence.id
+                )
+            )
+
+        if case is not None:
+            db.execute(
+                delete(Event).where(
+                    Event.case_id == case.id
+                )
+            )
+
+        if correspondence is not None:
+            db.execute(
+                delete(Correspondence).where(
+                    Correspondence.id == correspondence.id
+                )
+            )
+
+        if case is not None:
+            db.execute(
+                delete(Case).where(
+                    Case.id == case.id
+                )
+            )
+
+        db.commit()
+        db.close()
+
+
+def test_approve_analysis_existing_event_uses_selected_event_without_creating_new_event():
+    db = TestSessionLocal()
+    case = None
+    correspondence = None
+    event = None
+
+    try:
+        case = Case(
+            internal_reference="PAT-CN-955",
+            jurisdiction="CN",
+        )
+        db.add(case)
+        db.commit()
+        db.refresh(case)
+
+        correspondence = Correspondence(
+            import_type=ImportType.EMAIL,
+            case_id=case.id,
+        )
+        db.add(correspondence)
+        db.commit()
+        db.refresh(correspondence)
+
+        analysis_data = AnalysisCreate(
+            internal_reference="PAT-CN-955",
+            event_type=EventType.OFFICE_ACTION,
+        )
+        analysis_service.save_analysis(
+            db,
+            correspondence.id,
+            analysis_data,
+        )
+
+        event = Event(
+            case_id=case.id,
+            event_type=EventType.OFFICE_ACTION,
+        )
+        db.add(event)
+        db.commit()
+        db.refresh(event)
+
+        selection_data = AnalysisEventSelectionUpdate(
+            event_selection=EventSelection.EXISTING_EVENT,
+            event_id=event.id,
+        )
+        analysis_service.update_analysis_event_selection(
+            db,
+            correspondence.id,
+            selection_data,
+        )
+
+        event_count_before = db.scalar(
+            select(func.count())
+            .select_from(Event)
+            .where(Event.case_id == case.id)
+        )
+
+        result = analysis_service.approve_analysis(
+            db,
+            correspondence.id,
+        )
+
+        assert result.status == AnalysisStatus.APPROVED
+        assert result.approved_at is not None
+        assert result.event_selection == EventSelection.EXISTING_EVENT
+        assert result.event_id == event.id
+
+        event_count_after = db.scalar(
+            select(func.count())
+            .select_from(Event)
+            .where(Event.case_id == case.id)
+        )
+
+        assert event_count_after == event_count_before
+        assert event_count_after == 1
+
+    finally:
+        db.rollback()
+
+        if correspondence is not None:
+            analyses = db.scalars(
+                select(Analysis).where(
+                    Analysis.correspondence_id == correspondence.id
+                )
+            ).all()
+            for analysis in analyses:
+                db.delete(analysis)
+
+        if event is not None:
+            db.delete(event)
+
+        if correspondence is not None:
+            db.delete(correspondence)
+
+        if case is not None:
+            db.delete(case)
+
+        db.commit()
+        db.close()
+
+
+def test_approve_analysis_existing_event_revalidates_case_on_approval():
+    db = TestSessionLocal()
+    first_case = None
+    second_case = None
+    correspondence = None
+    event = None
+
+    try:
+        first_case = Case(
+            internal_reference="PAT-CN-956",
+            jurisdiction="CN",
+        )
+        second_case = Case(
+            internal_reference="PAT-CN-957",
+            jurisdiction="CN",
+        )
+        db.add_all([first_case, second_case])
+        db.commit()
+        db.refresh(first_case)
+        db.refresh(second_case)
+
+        correspondence = Correspondence(
+            import_type=ImportType.EMAIL,
+            case_id=first_case.id,
+        )
+        db.add(correspondence)
+        db.commit()
+        db.refresh(correspondence)
+
+        analysis_data = AnalysisCreate(
+            internal_reference="PAT-CN-956",
+            event_type=EventType.OFFICE_ACTION,
+        )
+        analysis_service.save_analysis(
+            db,
+            correspondence.id,
+            analysis_data,
+        )
+
+        event = Event(
+            case_id=first_case.id,
+            event_type=EventType.OFFICE_ACTION,
+        )
+        db.add(event)
+        db.commit()
+        db.refresh(event)
+
+        selection_data = AnalysisEventSelectionUpdate(
+            event_selection=EventSelection.EXISTING_EVENT,
+            event_id=event.id,
+        )
+        analysis_service.update_analysis_event_selection(
+            db,
+            correspondence.id,
+            selection_data,
+        )
+
+        event.case_id = second_case.id
+        db.commit()
+        db.refresh(event)
+
+        with pytest.raises(
+            EventCaseMismatchError,
+            match=(
+                f"Event with id {event.id} "
+                "does not belong to the correspondence case"
+            ),
+        ):
+            analysis_service.approve_analysis(
+                db,
+                correspondence.id,
+            )
+
+        analysis = analysis_service.get_analysis_by_correspondence_id(
+            db,
+            correspondence.id,
+        )
+
+        assert analysis.status == AnalysisStatus.PENDING_REVIEW
+        assert analysis.approved_at is None
+        assert analysis.event_id == event.id
+
+    finally:
+        db.rollback()
+
+        if correspondence is not None:
+            analyses = db.scalars(
+                select(Analysis).where(
+                    Analysis.correspondence_id == correspondence.id
+                )
+            ).all()
+            for analysis in analyses:
+                db.delete(analysis)
+
+        if event is not None:
+            db.delete(event)
+
+        if correspondence is not None:
+            db.delete(correspondence)
+
+        if first_case is not None:
+            db.delete(first_case)
+
+        if second_case is not None:
+            db.delete(second_case)
+
+        db.commit()
+        db.close()
+
+
+def test_approve_analysis_new_event_rolls_back_when_commit_fails(monkeypatch):
+    db = TestSessionLocal()
+    case = None
+    correspondence = None
+    original_commit = db.commit
+
+    try:
+        case = Case(
+            internal_reference="PAT-CN-959",
+            jurisdiction="CN",
+        )
+        db.add(case)
+        db.commit()
+        db.refresh(case)
+
+        correspondence = Correspondence(
+            import_type=ImportType.EMAIL,
+            case_id=case.id,
+        )
+        db.add(correspondence)
+        db.commit()
+        db.refresh(correspondence)
+
+        analysis_data = AnalysisCreate(
+            internal_reference="PAT-CN-959",
+            event_type=EventType.OFFICE_ACTION,
+        )
+        analysis_service.save_analysis(
+            db,
+            correspondence.id,
+            analysis_data,
+        )
+
+        selection_data = AnalysisEventSelectionUpdate(
+            event_selection=EventSelection.NEW_EVENT,
+            event_id=None,
+        )
+        analysis_service.update_analysis_event_selection(
+            db,
+            correspondence.id,
+            selection_data,
+        )
+
+        event_count_before = db.scalar(
+            select(func.count())
+            .select_from(Event)
+            .where(Event.case_id == case.id)
+        )
+
+        def fail_commit():
+            raise RuntimeError("synthetic approval commit failure")
+
+        monkeypatch.setattr(db, "commit", fail_commit)
+
+        with pytest.raises(
+            RuntimeError,
+            match="synthetic approval commit failure",
+        ):
+            analysis_service.approve_analysis(
+                db,
+                correspondence.id,
+            )
+
+        analysis = analysis_service.get_analysis_by_correspondence_id(
+            db,
+            correspondence.id,
+        )
+
+        assert analysis.status == AnalysisStatus.PENDING_REVIEW
+        assert analysis.approved_at is None
+        assert analysis.event_selection == EventSelection.NEW_EVENT
+        assert analysis.event_id is None
+
+        event_count_after = db.scalar(
+            select(func.count())
+            .select_from(Event)
+            .where(Event.case_id == case.id)
+        )
+
+        assert event_count_after == event_count_before
+
+    finally:
+        db.rollback()
+
+        if correspondence is not None:
+            db.execute(
+                delete(Analysis).where(
+                    Analysis.correspondence_id == correspondence.id
+                )
+            )
+
+        if case is not None:
+            db.execute(
+                delete(Event).where(
+                    Event.case_id == case.id
+                )
+            )
+
+        if correspondence is not None:
+            db.execute(
+                delete(Correspondence).where(
+                    Correspondence.id == correspondence.id
+                )
+            )
+
+        if case is not None:
+            db.execute(
+                delete(Case).where(
+                    Case.id == case.id
+                )
+            )
+
+        original_commit()
+        db.close()
+
+
+def test_approve_analysis_new_event_prevents_duplicate_on_concurrent_approval():
+    db = TestSessionLocal()
+    case = None
+    correspondence = None
+
+    try:
+        case = Case(
+            internal_reference="PAT-CN-960",
+            jurisdiction="CN",
+        )
+        db.add(case)
+        db.commit()
+        db.refresh(case)
+
+        correspondence = Correspondence(
+            import_type=ImportType.EMAIL,
+            case_id=case.id,
+        )
+        db.add(correspondence)
+        db.commit()
+        db.refresh(correspondence)
+
+        analysis_data = AnalysisCreate(
+            internal_reference="PAT-CN-960",
+            event_type=EventType.OFFICE_ACTION,
+        )
+        analysis_service.save_analysis(
+            db,
+            correspondence.id,
+            analysis_data,
+        )
+
+        selection_data = AnalysisEventSelectionUpdate(
+            event_selection=EventSelection.NEW_EVENT,
+            event_id=None,
+        )
+        analysis_service.update_analysis_event_selection(
+            db,
+            correspondence.id,
+            selection_data,
+        )
+
+        correspondence_id = correspondence.id
+        case_id = case.id
+        barrier = Barrier(2)
+
+        def approve_in_separate_session():
+            worker_db = TestSessionLocal()
+            try:
+                barrier.wait()
+
+                result = analysis_service.approve_analysis(
+                    worker_db,
+                    correspondence_id,
+                )
+
+                return result.event_id, result.approved_at
+            finally:
+                worker_db.close()
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            first_future = executor.submit(approve_in_separate_session)
+            second_future = executor.submit(approve_in_separate_session)
+
+            first_event_id, first_approved_at = first_future.result(timeout=10)
+            second_event_id, second_approved_at = second_future.result(timeout=10)
+
+        assert first_event_id is not None
+        assert second_event_id is not None
+        assert first_event_id == second_event_id
+        assert first_approved_at == second_approved_at
+
+        event_count = db.scalar(
+            select(func.count())
+            .select_from(Event)
+            .where(Event.case_id == case_id)
+        )
+
+        assert event_count == 1
+
+        analysis = analysis_service.get_analysis_by_correspondence_id(
+            db,
+            correspondence_id,
+        )
+
+        assert analysis.status == AnalysisStatus.APPROVED
+        assert analysis.event_id == first_event_id
+
+    finally:
+        db.rollback()
+
+        if correspondence is not None:
+            analyses = db.scalars(
+                select(Analysis).where(
+                    Analysis.correspondence_id == correspondence.id
+                )
+            ).all()
+            for analysis in analyses:
+                db.delete(analysis)
+
+        if case is not None:
+            events = db.scalars(
+                select(Event).where(Event.case_id == case.id)
+            ).all()
+            for event in events:
+                db.delete(event)
+
+        if correspondence is not None:
+            db.delete(correspondence)
+
+        if case is not None:
+            db.delete(case)
+
+        db.commit()
+        db.close()
+
+
+def test_approve_analysis_existing_event_revalidates_event_type_on_approval():
+    db = TestSessionLocal()
+    case = None
+    correspondence = None
+    event = None
+
+    try:
+        case = Case(
+            internal_reference="PAT-CN-958",
+            jurisdiction="CN",
+        )
+        db.add(case)
+        db.commit()
+        db.refresh(case)
+
+        correspondence = Correspondence(
+            import_type=ImportType.EMAIL,
+            case_id=case.id,
+        )
+        db.add(correspondence)
+        db.commit()
+        db.refresh(correspondence)
+
+        analysis_data = AnalysisCreate(
+            internal_reference="PAT-CN-958",
+            event_type=EventType.OFFICE_ACTION,
+        )
+        analysis_service.save_analysis(
+            db,
+            correspondence.id,
+            analysis_data,
+        )
+
+        event = Event(
+            case_id=case.id,
+            event_type=EventType.OFFICE_ACTION,
+        )
+        db.add(event)
+        db.commit()
+        db.refresh(event)
+
+        selection_data = AnalysisEventSelectionUpdate(
+            event_selection=EventSelection.EXISTING_EVENT,
+            event_id=event.id,
+        )
+        analysis_service.update_analysis_event_selection(
+            db,
+            correspondence.id,
+            selection_data,
+        )
+
+        event.event_type = EventType.PUBLICATION
+        db.commit()
+        db.refresh(event)
+
+        with pytest.raises(
+            EventTypeMismatchError,
+            match=(
+                f"Event with id {event.id} "
+                "does not match the analysis event type"
+            ),
+        ):
+            analysis_service.approve_analysis(
+                db,
+                correspondence.id,
+            )
+
+        analysis = analysis_service.get_analysis_by_correspondence_id(
+            db,
+            correspondence.id,
+        )
+
+        assert analysis.status == AnalysisStatus.PENDING_REVIEW
+        assert analysis.approved_at is None
+        assert analysis.event_id == event.id
+
+    finally:
+        db.rollback()
+
+        if correspondence is not None:
+            db.execute(
+                delete(Analysis).where(
+                    Analysis.correspondence_id == correspondence.id
+                )
+            )
+
+        if event is not None:
+            db.execute(
+                delete(Event).where(
+                    Event.id == event.id
+                )
+            )
+
+        if correspondence is not None:
+            db.execute(
+                delete(Correspondence).where(
+                    Correspondence.id == correspondence.id
+                )
+            )
+
+        if case is not None:
+            db.execute(
+                delete(Case).where(
+                    Case.id == case.id
+                )
+            )
+
+        db.commit()
+        db.close()

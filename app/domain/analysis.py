@@ -24,3 +24,4 @@ class EventSelection(StrEnum):
     UNRESOLVED = "unresolved"
     NEW_EVENT = "new_event"
     EXISTING_EVENT = "existing_event"
+    NO_EVENT = "no_event"

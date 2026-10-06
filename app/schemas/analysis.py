@@ -53,6 +53,9 @@ class AnalysisEventSelectionUpdate(BaseModel):
         if self.event_selection == EventSelection.NEW_EVENT:
             if self.event_id is not None:
                 raise ValueError("event_id must be None when event_selection is new_event")
+        if self.event_selection == EventSelection.NO_EVENT:
+            if self.event_id is not None:
+                raise ValueError("event_id must be None when event_selection is no_event")
         if self.event_selection == EventSelection.EXISTING_EVENT:
             if self.event_id is None:
                 raise ValueError("event_id is required when event_selection is existing_event")

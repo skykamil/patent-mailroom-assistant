@@ -4,8 +4,9 @@ from datetime import UTC, datetime
 from sqlalchemy.orm import Session
 
 from app.db.models.analysis import Analysis
+from app.db.models.event import Event
 from app.domain.analysis import AnalysisStatus, EventSelection
-from app.domain.exceptions import AnalysisAlreadyApprovedError, AnalysisNotFoundError, CorrespondenceNotFoundError, EventCaseMismatchError, EventNotFoundError, EventTypeMismatchError
+from app.domain.exceptions import AnalysisAlreadyApprovedError, AnalysisEventSelectionUnresolvedError, AnalysisEventTypeRequiredError, AnalysisNotFoundError, CorrespondenceCaseRequiredError, CorrespondenceNotFoundError, EventCaseMismatchError, EventNotFoundError, EventTypeMismatchError
 from app.repositories import analysis_repository, correspondence_repository, event_repository
 from app.schemas.analysis import AnalysisCreate, AnalysisEventSelectionUpdate
 
@@ -81,10 +82,35 @@ def approve_analysis(db: Session, correspondence_id: int) -> Analysis:
     analysis = analysis_repository.get_analysis_by_correspondence_id(db, correspondence_id)
     if analysis is None:
         raise AnalysisNotFoundError(f"Analysis for correspondence with id {correspondence_id} not found")
-    if analysis.status != AnalysisStatus.APPROVED:
+    if analysis.status == AnalysisStatus.APPROVED:
+        return analysis
+    if analysis.event_selection == EventSelection.UNRESOLVED:
+        raise AnalysisEventSelectionUnresolvedError(f"Analysis for correspondence with id {correspondence_id} has unresolved event selection")
+    if analysis.event_selection == EventSelection.EXISTING_EVENT:
+        assert analysis.event_id is not None
+        event = event_repository.get_event_by_id(db, analysis.event_id)
+        if event is None:
+            raise EventNotFoundError(f"Event with id {analysis.event_id} not found")
+        if event.case_id != correspondence.case_id:
+            raise EventCaseMismatchError(f"Event with id {event.id} does not belong to the correspondence case")
+        if event.event_type != analysis.event_type:
+            raise EventTypeMismatchError(f"Event with id {event.id} does not match the analysis event type")
+    if analysis.event_selection == EventSelection.NEW_EVENT:
+        if correspondence.case_id is None:
+            raise CorrespondenceCaseRequiredError(f"Correspondence with id {correspondence_id} must be assigned to a case before creating a new event")
+        if analysis.event_type is None:
+            raise AnalysisEventTypeRequiredError(f"Analysis for correspondence with id {correspondence_id} must have an event type before creating a new event")
+    try:
+        if analysis.event_selection == EventSelection.NEW_EVENT:
+            new_event = Event(
+                case_id=correspondence.case_id,
+                event_type=analysis.event_type,
+            )
+            event_repository.create_event(db, new_event)
+            db.flush()
+            analysis.event_id = new_event.id
         analysis.status = AnalysisStatus.APPROVED
         analysis.approved_at = datetime.now(UTC)
-    try:
         db.commit()
     except Exception:
         db.rollback()
