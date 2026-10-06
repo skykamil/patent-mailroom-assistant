@@ -2,7 +2,7 @@
 
 An educational backend project for processing patent correspondence, built with Python, FastAPI, SQLAlchemy and PostgreSQL.
 
-The intended workflow is to import an email, extract information from its contents and attachments, and prepare proposed updates for human review. The current implementation covers the case CRUD foundation, correspondence and document models, local file storage, direct-document import through the HTTP API, deterministic MIME parsing of `.eml` messages and their attachments, transactional email import through the HTTP API with source-file storage, attachment extraction and duplicate detection, and the database model, service layer and HTTP API for storing, retrieving, updating and approving prepared analysis results. Automatic analysis generation, AI integration and task creation from approved analyses are not implemented yet.
+The intended workflow is to import an email, extract information from its contents and attachments, and prepare proposed updates for human review. The current implementation covers the case CRUD foundation, correspondence and document models, local file storage, direct-document import through the HTTP API, deterministic MIME parsing of `.eml` messages and their attachments, transactional email import through the HTTP API with source-file storage, attachment extraction and duplicate detection, and the database model, service layer and HTTP API for storing, retrieving, updating, reviewing event-selection decisions and approving prepared analysis results. Automatic analysis generation, AI integration, event creation during approval and task creation from approved analyses are not implemented yet.
 
 ## Current functionality
 
@@ -35,8 +35,11 @@ The intended workflow is to import an email, extract information from its conten
 
 - Store case-level `Event` records representing concrete business events, with an event type and creation timestamp.
 - Allow an editable `Analysis` to keep an event-selection decision as `unresolved`, `new_event` or `existing_event`.
+- Update the event-selection decision through the HTTP API during manual review.
 - Store an optional `event_id` on an analysis. Multiple analyses can reference the same event.
+- Require `event_id` for `existing_event` selections and reject it for `unresolved` and `new_event`.
 - Validate existing-event selections against event existence, case ownership and event type before saving the review decision.
+- Reset the event-selection decision to `unresolved` and clear `event_id` when the analysis event type changes.
 - Prevent changes to the event-selection decision after the analysis has been approved.
 - Store `Task` records linked to an `Event`, including task type, name, due date and whether the task is primary.
 - Prevent duplicate primary tasks of the same type for the same event while allowing multiple non-primary tasks.
@@ -154,6 +157,7 @@ These files are stored separately from the PostgreSQL Docker volume. Removing th
 | `POST` | `/correspondences/email-import` | Import an `.eml` message and create or return a `Correspondence` record |
 | `GET` | `/correspondences/{correspondence_id}/analysis` | Retrieve the `Analysis` for a `Correspondence` |
 | `PUT` | `/correspondences/{correspondence_id}/analysis` | Create or replace the `Analysis` for a `Correspondence` |
+| `PUT` | `/correspondences/{correspondence_id}/analysis/event-selection` | Update the event-selection decision for an editable `Analysis` |
 | `POST` | `/correspondences/{correspondence_id}/analysis/approve` | Approve the `Analysis` for a `Correspondence` |
 
 The examples below use `1` as a placeholder database ID. Replace case IDs in `/cases/1` and `case_id=1` with the `id` returned when creating a case. Replace the correspondence ID in `/correspondences/1/analysis` with the `id` returned by an import.
@@ -298,6 +302,8 @@ Subsequent saves keep the same analysis record and its ID. Each `Correspondence`
 
 A newly created analysis starts with `pending_review` status and no approval timestamp. Once approved, it can no longer be modified through this endpoint.
 
+If the analysis `event_type` changes while the analysis is still editable, any existing event-selection decision is reset to `unresolved` and `event_id` is cleared because the previous event link may no longer be valid.
+
 | Status | Meaning |
 | --- | --- |
 | `201 Created` | The first analysis for this correspondence was saved |
@@ -324,6 +330,50 @@ This endpoint returns the existing `Analysis` without modifying it.
 | --- | --- |
 | `200 OK` | The analysis was retrieved successfully |
 | `404 Not Found` | The correspondence does not exist, or it has no analysis yet |
+
+### Update analysis event selection
+
+During review, the event-selection decision for an editable analysis can be updated separately from the rest of the analysis data.
+
+To mark the analysis for creation of a new event during a future approval step:
+
+```bash
+curl -i -X PUT http://127.0.0.1:8000/correspondences/1/analysis/event-selection \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "event_selection": "new_event"
+  }'
+```
+
+The supported states are:
+
+- `unresolved` with no `event_id`
+- `new_event` with no `event_id`
+- `existing_event` with an `event_id`
+
+For example, to link the analysis to an existing event:
+
+```bash
+curl -i -X PUT http://127.0.0.1:8000/correspondences/1/analysis/event-selection \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "event_selection": "existing_event",
+    "event_id": 1
+  }'
+```
+
+An `existing_event` selection is accepted only when the event exists, belongs to the same case as the correspondence and has the same event type as the analysis.
+
+Selecting `new_event` records only the review decision. It does not create an `Event` yet. Event creation during approval is not implemented yet.
+
+The event-selection decision cannot be changed after the analysis has been approved.
+
+| Status | Meaning |
+| --- | --- |
+| `200 OK` | The event-selection decision was updated successfully |
+| `404 Not Found` | The correspondence, analysis or selected existing event does not exist |
+| `409 Conflict` | The analysis is already approved, or the selected event belongs to another case or has an incompatible event type |
+| `422 Unprocessable Content` | Request validation failed, including an invalid combination of `event_selection` and `event_id` |
 
 ### Approve analysis
 
@@ -380,8 +430,8 @@ Tests cover:
 - **Storage and direct uploads:** local file storage, the `Correspondence`–`Document` relationship, document import, upload API behavior, and database rollback and file cleanup after failures.
 - **Email parsing:** metadata, plain-text body extraction, MIME attachments, unnamed attachments, case-insensitive headers and a synthetic email fixture. Invalid-input tests cover empty content, plain text, PDF content and unsupported character encodings.
 - **Email import:** original `.eml` storage, attachment records, byte-identical duplicate detection, missing-case validation, rollback and file cleanup. API tests cover new and duplicate imports, invalid attachment metadata, and rejection of invalid email content without creating records or files.
-- **Analysis service:** creation, retrieval, replacement without duplicates, clearing stored values, timestamp updates, review-state handling, idempotent approval, prevention of edits after approval, missing-correspondence and missing-analysis handling, rollback after failed creates and updates, and concurrent first saves. Event-selection tests cover unresolved and new-event decisions, linking an existing event, clearing an earlier link, case and event-type mismatches, missing events, and prevention of changes after approval.
-- **Analysis API:** `201 Created` on the first save, `200 OK` on replacement, retrieval and approval, `404 Not Found` for missing correspondences or analyses, `409 Conflict` when replacing an approved analysis, and `422 Unprocessable Content` for invalid input.
+- **Analysis service:** creation, retrieval, replacement without duplicates, clearing stored values, timestamp updates, review-state handling, idempotent approval, prevention of edits after approval, missing-correspondence and missing-analysis handling, rollback after failed creates and updates, and concurrent first saves. Event-selection tests cover `unresolved`, `new_event` and `existing_event`, missing events, case and event-type mismatches, prevention of changes after approval, resetting event linkage when `event_type` changes, and serialization against concurrent analysis changes through the correspondence row lock.
+- **Analysis API:** `201 Created` on the first save, `200 OK` on replacement, retrieval and approval, event-selection updates for `unresolved`, `new_event` and `existing_event`, `404 Not Found` for missing correspondences, analyses or events, `409 Conflict` for approved analyses and invalid existing-event links, and `422 Unprocessable Content` for invalid input and invalid event-selection combinations.
 
 After adding migrations, apply them to both the application and test databases before running integration tests.
 

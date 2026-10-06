@@ -96,21 +96,21 @@ def approve_analysis(db: Session, correspondence_id: int) -> Analysis:
 def update_analysis_event_selection(db: Session, correspondence_id: int, selection_data: AnalysisEventSelectionUpdate) -> Analysis:
     correspondence = correspondence_repository.get_correspondence_by_id_for_update(db, correspondence_id)
     if correspondence is None:
-        raise CorrespondenceNotFoundError
+        raise CorrespondenceNotFoundError(f"Correspondence with id {correspondence_id} not found")
     analysis = analysis_repository.get_analysis_by_correspondence_id(db, correspondence_id)
     if analysis is None:
-        raise AnalysisNotFoundError
+        raise AnalysisNotFoundError(f"Analysis for correspondence with id {correspondence_id} not found")
     if analysis.status == AnalysisStatus.APPROVED:
-        raise AnalysisAlreadyApprovedError
+        raise AnalysisAlreadyApprovedError(f"Analysis for correspondence with id {correspondence_id} is already approved")
     if selection_data.event_selection == EventSelection.EXISTING_EVENT:
         assert selection_data.event_id is not None
         event = event_repository.get_event_by_id(db, selection_data.event_id)
         if event is None:
-            raise EventNotFoundError
+            raise EventNotFoundError(f"Event with id {selection_data.event_id} not found")
         if event.case_id != correspondence.case_id:
-            raise EventCaseMismatchError
+            raise EventCaseMismatchError(f"Event with id {selection_data.event_id} does not belong to the correspondence case")
         if event.event_type != analysis.event_type:
-            raise EventTypeMismatchError
+            raise EventTypeMismatchError(f"Event with id {selection_data.event_id} does not match the analysis event type")
     analysis.event_selection = selection_data.event_selection
     analysis.event_id = selection_data.event_id
     try:
