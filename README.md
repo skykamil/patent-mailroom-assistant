@@ -17,7 +17,7 @@ The intended workflow is to import an email, extract information from its conten
 ### Correspondence import
 
 - Import one or more documents through the direct-upload API, creating a `Correspondence` and related `Document` records.
-- Parse and import `.eml` messages, extracting email metadata, plain-text body content and MIME attachments.
+- Parse and import `.eml` messages, extracting email metadata, preferring plain-text body content with an HTML fallback, and MIME attachments.
 - Store the original `.eml` file and its SHA-256 source hash, with attachments stored as related `Document` records.
 - Return the existing `Correspondence` for byte-identical email imports without changing its case association.
 - Reject invalid email content, unsupported character encodings and invalid attachment metadata before storing files or database records.

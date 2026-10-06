@@ -157,3 +157,48 @@ def test_parse_email_accepts_case_insensitive_headers(header_name: str):
     assert result.subject == "Test subject"
     assert result.body_text == "Synthetic email body"
     assert result.attachments == []
+
+
+def test_parse_email_reads_html_only_body():
+    message = EmailMessage()
+    message["Subject"] = "test"
+    message["From"] = "user@test.com"
+    message.set_content("<p>Synthetic HTML body</p>", subtype="html")
+    raw_email = message.as_bytes()
+    result = parse_email(raw_email)
+    assert result.body_text is not None
+    assert "Synthetic HTML body" in result.body_text
+
+
+def test_parse_email_reads_multipart_attachment_as_bytes():
+    message = EmailMessage()
+    message["Subject"] = "test"
+    message["From"] = "user@test.com"
+    message.set_content("Outer body")
+    message.make_mixed()
+
+    multipart_attachment = EmailMessage()
+    multipart_attachment["Content-Disposition"] = (
+        'attachment; filename="bundle.mime"'
+    )
+    multipart_attachment.make_mixed()
+
+    first_part = EmailMessage()
+    first_part.set_content("First part")
+
+    second_part = EmailMessage()
+    second_part.set_content("Second part")
+
+    multipart_attachment.attach(first_part)
+    multipart_attachment.attach(second_part)
+
+    message.attach(multipart_attachment)
+
+    result = parse_email(message.as_bytes())
+
+    assert len(result.attachments) == 1
+    attachment = result.attachments[0]
+    assert attachment.mime_type == "multipart/mixed"
+    assert isinstance(attachment.content, bytes)
+    assert b"First part" in attachment.content
+    assert b"Second part" in attachment.content

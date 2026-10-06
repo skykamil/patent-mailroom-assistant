@@ -50,7 +50,7 @@ def parse_email(raw_email: bytes) -> ParsedEmail:
     message_id = message["Message-ID"]
     if message_id is not None:
         message_id = str(message_id)
-    body_part = message.get_body(preferencelist=("plain",))
+    body_part = message.get_body(preferencelist=("plain", "html"))
     try:
         body_text = body_part.get_content() if body_part is not None else None
     except LookupError as exc:
@@ -63,10 +63,12 @@ def parse_email(raw_email: bytes) -> ParsedEmail:
         mime_type = attachment.get_content_type()
         if mime_type == "message/rfc822":
             content = attachment.get_content().as_bytes()
+        elif attachment.is_multipart():
+            content = attachment.as_bytes()
         else:
             content = attachment.get_payload(decode=True)
         if not isinstance(content, bytes):
-            raise ValueError(f"Attachment '{filename}' content is not bytes")
+            raise InvalidEmailError(f"Attachment '{filename}' content is not bytes")
         parsed_attachment = ParsedAttachment(filename, mime_type, content)
         attachments.append(parsed_attachment)
     return ParsedEmail(subject, sender, email_date, message_id, body_text, attachments)
