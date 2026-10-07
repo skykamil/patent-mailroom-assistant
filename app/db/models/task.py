@@ -8,6 +8,7 @@ from app.db.base import Base
 from app.domain.task import TaskType
 
 if TYPE_CHECKING:
+    from app.db.models.correspondence import Correspondence
     from app.db.models.event import Event
 
 
@@ -35,5 +36,7 @@ class Task(Base):
     is_primary: Mapped[bool] = mapped_column(Boolean, nullable=False)
     due_date: Mapped[date] = mapped_column(Date, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    event_id: Mapped[int] = mapped_column(ForeignKey("events.id"), nullable=False)
-    event: Mapped["Event"] = relationship(back_populates="tasks")
+    correspondence_id: Mapped[int] = mapped_column(ForeignKey("correspondences.id"), nullable=False)
+    event_id: Mapped[int | None] = mapped_column(ForeignKey("events.id"), nullable=True)
+    correspondence: Mapped["Correspondence"] = relationship(back_populates="tasks")
+    event: Mapped["Event | None"] = relationship(back_populates="tasks")

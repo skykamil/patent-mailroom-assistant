@@ -49,7 +49,8 @@ Automatic analysis generation, AI integration, deadline calculation and task cre
 - Keep event creation, event linkage and analysis approval in one transaction.
 - Make repeated approval idempotent, so an already approved analysis does not create another event or change its original approval timestamp.
 - Prevent changes to the event-selection decision after the analysis has been approved.
-- Store `Task` records linked to an `Event`, including task type, name, due date and whether the task is primary.
+- Store `Task` records linked to a source `Correspondence`, with an optional related `Event`, including task type, name, due date and whether the task is primary.
+- Require every task to reference a `Correspondence`, while allowing tasks that do not belong to an `Event`.
 - Prevent duplicate primary tasks of the same type for the same event while allowing multiple non-primary tasks.
 - Automatic event matching and task creation or update from approved analyses are not implemented yet.
 

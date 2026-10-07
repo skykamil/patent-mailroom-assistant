@@ -8,8 +8,9 @@ from app.db.base import Base
 from app.domain.correspondence import ImportType
 
 if TYPE_CHECKING:
-    from app.db.models.document import Document
     from app.db.models.analysis import Analysis
+    from app.db.models.document import Document
+    from app.db.models.task import Task
 
 
 class Correspondence(Base):
@@ -39,3 +40,4 @@ class Correspondence(Base):
     body_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     documents: Mapped[list["Document"]] = relationship(back_populates="correspondence")
     analysis: Mapped["Analysis | None"] = relationship(back_populates="correspondence")
+    tasks: Mapped[list["Task"]] = relationship(back_populates="correspondence")
