@@ -221,3 +221,34 @@ def test_multiple_non_primary_tasks_for_same_event_and_type_are_allowed():
     finally:
         db.rollback()
         db.close()
+
+
+def test_review_agent_communication_task_can_exist_without_event():
+    db = TestSessionLocal()
+
+    try:
+        correspondence = Correspondence(
+            import_type=ImportType.EMAIL,
+        )
+        db.add(correspondence)
+        db.flush()
+
+        task = Task(
+            correspondence=correspondence,
+            task_type=TaskType.REVIEW_AGENT_COMMUNICATION,
+            name="Review agent communication",
+            is_primary=False,
+            due_date=date(2026, 10, 14),
+        )
+        db.add(task)
+        db.flush()
+
+        assert task.id is not None
+        assert task.task_type == TaskType.REVIEW_AGENT_COMMUNICATION
+        assert task.correspondence_id == correspondence.id
+        assert task.event_id is None
+        assert task.is_primary is False
+
+    finally:
+        db.rollback()
+        db.close()
