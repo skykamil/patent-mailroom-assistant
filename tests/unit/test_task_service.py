@@ -70,3 +70,37 @@ def test_create_review_task_passes_event_id_to_task(monkeypatch):
     assert task.task_type == TaskType.REVIEW_OFFICE_ACTION
     assert task.is_primary is False
     assert task.due_date == date(2026, 10, 14)
+
+def test_create_primary_task_creates_primary_task_with_given_due_date(monkeypatch):
+    db = Mock(spec=Session)
+    repository_result = object()
+    create_task_mock = Mock(return_value=repository_result)
+
+    monkeypatch.setattr(
+        task_service.task_repository,
+        "create_task",
+        create_task_mock,
+    )
+
+    result = task_service.create_primary_task(
+        db=db,
+        correspondence_id=123,
+        event_id=456,
+        task_type=TaskType.OFFICE_ACTION,
+        name="Office Action response",
+        due_date=date(2027, 1, 15),
+    )
+
+    create_task_mock.assert_called_once()
+
+    called_db, task = create_task_mock.call_args.args
+
+    assert called_db is db
+    assert isinstance(task, Task)
+    assert task.correspondence_id == 123
+    assert task.event_id == 456
+    assert task.task_type == TaskType.OFFICE_ACTION
+    assert task.name == "Office Action response"
+    assert task.is_primary is True
+    assert task.due_date == date(2027, 1, 15)
+    assert result is repository_result
