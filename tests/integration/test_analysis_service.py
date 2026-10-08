@@ -1,6 +1,6 @@
 import pytest
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from threading import Barrier
 
 from sqlalchemy import delete, func, select
@@ -9,9 +9,11 @@ from app.db.models.analysis import Analysis
 from app.db.models.case import Case
 from app.db.models.correspondence import Correspondence
 from app.db.models.event import Event
+from app.db.models.task import Task
 from app.domain.analysis import AnalysisStatus, EventSelection, EventType, OfficeActionType
 from app.domain.correspondence import ImportType
-from app.domain.exceptions import AnalysisAlreadyApprovedError, AnalysisEventSelectionUnresolvedError, AnalysisEventTypeRequiredError, AnalysisNotFoundError, CorrespondenceCaseRequiredError, CorrespondenceNotFoundError, EventNotFoundError, EventCaseMismatchError, EventTypeMismatchError
+from app.domain.exceptions import AnalysisAlreadyApprovedError, AnalysisEventSelectionUnresolvedError, AnalysisEventTypeRequiredError, AnalysisNotFoundError, CorrespondenceCaseRequiredError, CorrespondenceNotFoundError, EventNotFoundError, EventCaseMismatchError, EventTypeMismatchError, OfficeActionDueDateRequiredError
+from app.domain.task import TaskType
 from app.repositories import analysis_repository, correspondence_repository, event_repository
 from app.schemas.analysis import AnalysisCreate, AnalysisEventSelectionUpdate
 from app.services import analysis_service
@@ -1190,6 +1192,7 @@ def test_approve_analysis_creates_and_links_new_event():
         analysis_data = AnalysisCreate(
             internal_reference="PAT-CN-950",
             event_type=EventType.OFFICE_ACTION,
+            calculated_due_date=date(2027, 1, 15),
         )
         analysis_service.save_analysis(
             db,
@@ -1224,11 +1227,29 @@ def test_approve_analysis_creates_and_links_new_event():
         assert created_event is not None
         assert created_event.case_id == case.id
         assert created_event.event_type == EventType.OFFICE_ACTION
+        created_task = db.scalar(
+            select(Task).where(
+                Task.correspondence_id == correspondence.id
+            )
+        )
+
+        assert created_task is not None
+        assert created_task.correspondence_id == correspondence.id
+        assert created_task.event_id == result.event_id
+        assert created_task.task_type == TaskType.OFFICE_ACTION
+        assert created_task.name == "Office Action"
+        assert created_task.due_date == date(2027, 1, 15)
+        assert created_task.is_primary is True
 
     finally:
         db.rollback()
 
         if correspondence is not None:
+            db.execute(
+            delete(Task).where(
+                Task.correspondence_id == correspondence.id
+                )
+            )
             analyses = db.scalars(
                 select(Analysis).where(
                     Analysis.correspondence_id == correspondence.id
@@ -1277,6 +1298,7 @@ def test_approve_analysis_new_event_does_not_create_duplicate_on_repeat():
         analysis_data = AnalysisCreate(
             internal_reference="PAT-CN-951",
             event_type=EventType.OFFICE_ACTION,
+            calculated_due_date=date(2027, 1, 15),
         )
         analysis_service.save_analysis(
             db,
@@ -1319,6 +1341,16 @@ def test_approve_analysis_new_event_does_not_create_duplicate_on_repeat():
 
         assert event_count == 1
 
+        task_types = db.scalars(
+            select(Task.task_type).where(
+                Task.correspondence_id == correspondence.id
+            )
+        ).all()
+
+        assert len(task_types) == 2
+        assert task_types.count(TaskType.OFFICE_ACTION) == 1
+        assert task_types.count(TaskType.REVIEW_OFFICE_ACTION) == 1
+
         created_event = event_repository.get_event_by_id(
             db,
             first_event_id,
@@ -1328,6 +1360,11 @@ def test_approve_analysis_new_event_does_not_create_duplicate_on_repeat():
         db.rollback()
 
         if correspondence is not None:
+            db.execute(
+                delete(Task).where(
+                    Task.correspondence_id == correspondence.id
+                )
+            )
             analyses = db.scalars(
                 select(Analysis).where(
                     Analysis.correspondence_id == correspondence.id
@@ -1835,6 +1872,7 @@ def test_approve_analysis_new_event_rolls_back_when_commit_fails(monkeypatch):
         analysis_data = AnalysisCreate(
             internal_reference="PAT-CN-959",
             event_type=EventType.OFFICE_ACTION,
+            calculated_due_date=date(2027, 1, 15),
         )
         analysis_service.save_analysis(
             db,
@@ -1950,6 +1988,7 @@ def test_approve_analysis_new_event_prevents_duplicate_on_concurrent_approval():
         analysis_data = AnalysisCreate(
             internal_reference="PAT-CN-960",
             event_type=EventType.OFFICE_ACTION,
+            calculated_due_date=date(2027, 1, 15),
         )
         analysis_service.save_analysis(
             db,
@@ -2005,6 +2044,16 @@ def test_approve_analysis_new_event_prevents_duplicate_on_concurrent_approval():
 
         assert event_count == 1
 
+        task_types = db.scalars(
+            select(Task.task_type).where(
+                Task.correspondence_id == correspondence_id
+            )
+        ).all()
+
+        assert len(task_types) == 2
+        assert task_types.count(TaskType.OFFICE_ACTION) == 1
+        assert task_types.count(TaskType.REVIEW_OFFICE_ACTION) == 1
+
         analysis = analysis_service.get_analysis_by_correspondence_id(
             db,
             correspondence_id,
@@ -2017,6 +2066,11 @@ def test_approve_analysis_new_event_prevents_duplicate_on_concurrent_approval():
         db.rollback()
 
         if correspondence is not None:
+            db.execute(
+                delete(Task).where(
+                    Task.correspondence_id == correspondence.id
+                )
+            )
             analyses = db.scalars(
                 select(Analysis).where(
                     Analysis.correspondence_id == correspondence.id
@@ -2132,6 +2186,440 @@ def test_approve_analysis_existing_event_revalidates_event_type_on_approval():
             db.execute(
                 delete(Event).where(
                     Event.id == event.id
+                )
+            )
+
+        if correspondence is not None:
+            db.execute(
+                delete(Correspondence).where(
+                    Correspondence.id == correspondence.id
+                )
+            )
+
+        if case is not None:
+            db.execute(
+                delete(Case).where(
+                    Case.id == case.id
+                )
+            )
+
+        db.commit()
+        db.close()
+
+
+def test_approve_analysis_new_office_action_requires_due_date():
+    db = TestSessionLocal()
+    case = None
+    correspondence = None
+
+    try:
+        case = Case(
+            internal_reference="PAT-CN-961",
+            jurisdiction="CN",
+        )
+        db.add(case)
+        db.commit()
+        db.refresh(case)
+
+        correspondence = Correspondence(
+            import_type=ImportType.EMAIL,
+            case_id=case.id,
+        )
+        db.add(correspondence)
+        db.commit()
+        db.refresh(correspondence)
+
+        analysis_data = AnalysisCreate(
+            internal_reference="PAT-CN-961",
+            event_type=EventType.OFFICE_ACTION,
+            calculated_due_date=None,
+            agent_reported_due_date=None,
+        )
+        analysis_service.save_analysis(
+            db,
+            correspondence.id,
+            analysis_data,
+        )
+
+        selection_data = AnalysisEventSelectionUpdate(
+            event_selection=EventSelection.NEW_EVENT,
+            event_id=None,
+        )
+        analysis_service.update_analysis_event_selection(
+            db,
+            correspondence.id,
+            selection_data,
+        )
+
+        event_count_before = db.scalar(
+            select(func.count())
+            .select_from(Event)
+            .where(Event.case_id == case.id)
+        )
+
+        with pytest.raises(
+            OfficeActionDueDateRequiredError,
+            match=(
+                f"Analysis for correspondence with id {correspondence.id} "
+                "must have a calculated or agent-reported due date "
+                "before creating a new Office Action event"
+            ),
+        ):
+            analysis_service.approve_analysis(
+                db,
+                correspondence.id,
+            )
+
+        analysis = analysis_service.get_analysis_by_correspondence_id(
+            db,
+            correspondence.id,
+        )
+
+        assert analysis.status == AnalysisStatus.PENDING_REVIEW
+        assert analysis.approved_at is None
+        assert analysis.event_selection == EventSelection.NEW_EVENT
+        assert analysis.event_id is None
+
+        event_count_after = db.scalar(
+            select(func.count())
+            .select_from(Event)
+            .where(Event.case_id == case.id)
+        )
+
+        assert event_count_after == event_count_before
+
+    finally:
+        db.rollback()
+
+        if correspondence is not None:
+            db.execute(
+                delete(Analysis).where(
+                    Analysis.correspondence_id == correspondence.id
+                )
+            )
+
+        if case is not None:
+            db.execute(
+                delete(Event).where(
+                    Event.case_id == case.id
+                )
+            )
+
+        if correspondence is not None:
+            db.execute(
+                delete(Correspondence).where(
+                    Correspondence.id == correspondence.id
+                )
+            )
+
+        if case is not None:
+            db.execute(
+                delete(Case).where(
+                    Case.id == case.id
+                )
+            )
+
+        db.commit()
+        db.close()
+
+
+def test_approve_analysis_new_office_action_uses_agent_reported_due_date_as_fallback():
+    db = TestSessionLocal()
+    case = None
+    correspondence = None
+    created_event = None
+
+    try:
+        case = Case(
+            internal_reference="PAT-CN-962",
+            jurisdiction="CN",
+        )
+        db.add(case)
+        db.commit()
+        db.refresh(case)
+
+        correspondence = Correspondence(
+            import_type=ImportType.EMAIL,
+            case_id=case.id,
+        )
+        db.add(correspondence)
+        db.commit()
+        db.refresh(correspondence)
+
+        analysis_data = AnalysisCreate(
+            internal_reference="PAT-CN-962",
+            event_type=EventType.OFFICE_ACTION,
+            calculated_due_date=None,
+            agent_reported_due_date=date(2027, 2, 20),
+        )
+        analysis_service.save_analysis(
+            db,
+            correspondence.id,
+            analysis_data,
+        )
+
+        selection_data = AnalysisEventSelectionUpdate(
+            event_selection=EventSelection.NEW_EVENT,
+            event_id=None,
+        )
+        analysis_service.update_analysis_event_selection(
+            db,
+            correspondence.id,
+            selection_data,
+        )
+
+        result = analysis_service.approve_analysis(
+            db,
+            correspondence.id,
+        )
+
+        assert result.event_id is not None
+        created_event = event_repository.get_event_by_id(
+            db,
+            result.event_id,
+        )
+
+        created_task = db.scalar(
+            select(Task).where(
+                Task.correspondence_id == correspondence.id
+            )
+        )
+
+        assert created_task is not None
+        assert created_task.task_type == TaskType.OFFICE_ACTION
+        assert created_task.due_date == date(2027, 2, 20)
+        assert created_task.is_primary is True
+
+    finally:
+        db.rollback()
+
+        if correspondence is not None:
+            db.execute(
+                delete(Task).where(
+                    Task.correspondence_id == correspondence.id
+                )
+            )
+
+            db.execute(
+                delete(Analysis).where(
+                    Analysis.correspondence_id == correspondence.id
+                )
+            )
+
+        if created_event is not None:
+            db.delete(created_event)
+
+        if correspondence is not None:
+            db.delete(correspondence)
+
+        if case is not None:
+            db.delete(case)
+
+        db.commit()
+        db.close()
+
+
+def test_approve_analysis_new_office_action_prefers_calculated_due_date():
+    db = TestSessionLocal()
+    case = None
+    correspondence = None
+    created_event = None
+
+    try:
+        case = Case(
+            internal_reference="PAT-CN-963",
+            jurisdiction="CN",
+        )
+        db.add(case)
+        db.commit()
+        db.refresh(case)
+
+        correspondence = Correspondence(
+            import_type=ImportType.EMAIL,
+            case_id=case.id,
+        )
+        db.add(correspondence)
+        db.commit()
+        db.refresh(correspondence)
+
+        analysis_data = AnalysisCreate(
+            internal_reference="PAT-CN-963",
+            event_type=EventType.OFFICE_ACTION,
+            calculated_due_date=date(2027, 3, 10),
+            agent_reported_due_date=date(2027, 3, 20),
+        )
+        analysis_service.save_analysis(
+            db,
+            correspondence.id,
+            analysis_data,
+        )
+
+        selection_data = AnalysisEventSelectionUpdate(
+            event_selection=EventSelection.NEW_EVENT,
+            event_id=None,
+        )
+        analysis_service.update_analysis_event_selection(
+            db,
+            correspondence.id,
+            selection_data,
+        )
+
+        result = analysis_service.approve_analysis(
+            db,
+            correspondence.id,
+        )
+
+        assert result.event_id is not None
+        created_event = event_repository.get_event_by_id(
+            db,
+            result.event_id,
+        )
+
+        created_task = db.scalar(
+            select(Task).where(
+                Task.correspondence_id == correspondence.id
+            )
+        )
+
+        assert created_task is not None
+        assert created_task.task_type == TaskType.OFFICE_ACTION
+        assert created_task.due_date == date(2027, 3, 10)
+        assert created_task.is_primary is True
+
+    finally:
+        db.rollback()
+
+        if correspondence is not None:
+            db.execute(
+                delete(Task).where(
+                    Task.correspondence_id == correspondence.id
+                )
+            )
+
+            db.execute(
+                delete(Analysis).where(
+                    Analysis.correspondence_id == correspondence.id
+                )
+            )
+
+        if created_event is not None:
+            db.delete(created_event)
+
+        if correspondence is not None:
+            db.delete(correspondence)
+
+        if case is not None:
+            db.delete(case)
+
+        db.commit()
+        db.close()
+
+
+def test_approve_analysis_new_office_action_creates_primary_and_review_tasks():
+    db = TestSessionLocal()
+    case = None
+    correspondence = None
+
+    try:
+        case = Case(
+            internal_reference="PAT-CN-965",
+            jurisdiction="CN",
+        )
+        db.add(case)
+        db.commit()
+        db.refresh(case)
+
+        correspondence = Correspondence(
+            import_type=ImportType.EMAIL,
+            case_id=case.id,
+        )
+        db.add(correspondence)
+        db.commit()
+        db.refresh(correspondence)
+
+        analysis_data = AnalysisCreate(
+            internal_reference="PAT-CN-965",
+            event_type=EventType.OFFICE_ACTION,
+            office_action_type=OfficeActionType.OFFICE_ACTION_2MO,
+            calculated_due_date=date(2027, 5, 12),
+        )
+        analysis_service.save_analysis(
+            db,
+            correspondence.id,
+            analysis_data,
+        )
+
+        selection_data = AnalysisEventSelectionUpdate(
+            event_selection=EventSelection.NEW_EVENT,
+            event_id=None,
+        )
+        analysis_service.update_analysis_event_selection(
+            db,
+            correspondence.id,
+            selection_data,
+        )
+
+        result = analysis_service.approve_analysis(
+            db,
+            correspondence.id,
+        )
+
+        assert result.status == AnalysisStatus.APPROVED
+        assert result.event_id is not None
+        assert result.approved_at is not None
+
+        tasks = db.scalars(
+            select(Task).where(
+                Task.correspondence_id == correspondence.id
+            )
+        ).all()
+
+        assert len(tasks) == 2
+
+        primary_task = next(
+            (task for task in tasks if task.is_primary),
+            None,
+        )
+        review_task = next(
+            (task for task in tasks if not task.is_primary),
+            None,
+        )
+
+        assert primary_task is not None
+        assert primary_task.task_type == TaskType.OFFICE_ACTION
+        assert primary_task.name == "Office Action 2MO"
+        assert primary_task.due_date == date(2027, 5, 12)
+        assert primary_task.event_id == result.event_id
+        assert primary_task.correspondence_id == correspondence.id
+
+        assert review_task is not None
+        assert review_task.task_type == TaskType.REVIEW_OFFICE_ACTION
+        assert review_task.name == "Review Office Action"
+        assert review_task.due_date == (
+            result.approved_at.date() + timedelta(days=7)
+        )
+        assert review_task.event_id == result.event_id
+        assert review_task.correspondence_id == correspondence.id
+
+    finally:
+        db.rollback()
+
+        if correspondence is not None:
+            db.execute(
+                delete(Task).where(
+                    Task.correspondence_id == correspondence.id
+                )
+            )
+            db.execute(
+                delete(Analysis).where(
+                    Analysis.correspondence_id == correspondence.id
+                )
+            )
+
+        if case is not None:
+            db.execute(
+                delete(Event).where(
+                    Event.case_id == case.id
                 )
             )
 

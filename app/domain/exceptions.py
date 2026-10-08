@@ -52,3 +52,7 @@ class CorrespondenceCaseRequiredError(Exception):
 
 class AnalysisEventTypeRequiredError(Exception):
     pass
+
+
+class OfficeActionDueDateRequiredError(Exception):
+    pass

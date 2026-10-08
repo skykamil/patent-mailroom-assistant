@@ -1171,3 +1171,75 @@ def test_post_approve_analysis_returns_409_for_new_event_precondition(
 
         db.commit()
         db.close()
+
+
+def test_post_approve_analysis_returns_409_when_new_office_action_has_no_due_date():
+    db = TestSessionLocal()
+    case = None
+    correspondence = None
+
+    try:
+        case = Case(
+            internal_reference="PAT-CN-964",
+            jurisdiction="CN",
+        )
+        db.add(case)
+        db.commit()
+        db.refresh(case)
+
+        correspondence = Correspondence(
+            import_type=ImportType.EMAIL,
+            case_id=case.id,
+        )
+        db.add(correspondence)
+        db.commit()
+        db.refresh(correspondence)
+
+        analysis_response = client.put(
+            f"/correspondences/{correspondence.id}/analysis",
+            json={
+                "internal_reference": "PAT-CN-964",
+                "event_type": EventType.OFFICE_ACTION.value,
+            },
+        )
+        assert analysis_response.status_code == status.HTTP_201_CREATED
+
+        selection_response = client.put(
+            f"/correspondences/{correspondence.id}/analysis/event-selection",
+            json={
+                "event_selection": EventSelection.NEW_EVENT.value,
+            },
+        )
+        assert selection_response.status_code == status.HTTP_200_OK
+
+        response = client.post(
+            f"/correspondences/{correspondence.id}/analysis/approve"
+        )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.json()["detail"] == (
+            f"Analysis for correspondence with id {correspondence.id} "
+            "must have a calculated or agent-reported due date "
+            "before creating a new Office Action event"
+        )
+
+    finally:
+        db.rollback()
+
+        if correspondence is not None:
+            db.execute(
+                delete(Analysis).where(
+                    Analysis.correspondence_id == correspondence.id
+                )
+            )
+            db.execute(
+                delete(Correspondence).where(
+                    Correspondence.id == correspondence.id
+                )
+            )
+
+        if case is not None:
+            db.delete(case)
+
+        db.commit()
+        db.close()

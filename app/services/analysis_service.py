@@ -5,10 +5,12 @@ from sqlalchemy.orm import Session
 
 from app.db.models.analysis import Analysis
 from app.db.models.event import Event
-from app.domain.analysis import AnalysisStatus, EventSelection
-from app.domain.exceptions import AnalysisAlreadyApprovedError, AnalysisEventSelectionUnresolvedError, AnalysisEventTypeRequiredError, AnalysisNotFoundError, CorrespondenceCaseRequiredError, CorrespondenceNotFoundError, EventCaseMismatchError, EventNotFoundError, EventTypeMismatchError
+from app.domain.analysis import AnalysisStatus, EventSelection, EventType, OfficeActionType
+from app.domain.exceptions import AnalysisAlreadyApprovedError, AnalysisEventSelectionUnresolvedError, AnalysisEventTypeRequiredError, AnalysisNotFoundError, CorrespondenceCaseRequiredError, CorrespondenceNotFoundError, EventCaseMismatchError, EventNotFoundError, EventTypeMismatchError, OfficeActionDueDateRequiredError
+from app.domain.task import TaskType
 from app.repositories import analysis_repository, correspondence_repository, event_repository
 from app.schemas.analysis import AnalysisCreate, AnalysisEventSelectionUpdate
+from app.services import task_service
 
 
 @dataclass
@@ -100,7 +102,15 @@ def approve_analysis(db: Session, correspondence_id: int) -> Analysis:
             raise CorrespondenceCaseRequiredError(f"Correspondence with id {correspondence_id} must be assigned to a case before creating a new event")
         if analysis.event_type is None:
             raise AnalysisEventTypeRequiredError(f"Analysis for correspondence with id {correspondence_id} must have an event type before creating a new event")
+        if analysis.event_type == EventType.OFFICE_ACTION:
+            if analysis.calculated_due_date is not None:
+                office_action_due_date = analysis.calculated_due_date
+            elif analysis.agent_reported_due_date is not None:
+                office_action_due_date = analysis.agent_reported_due_date
+            else:
+                raise OfficeActionDueDateRequiredError(f"Analysis for correspondence with id {correspondence_id} must have a calculated or agent-reported due date before creating a new Office Action event")
     try:
+        approval_time = datetime.now(UTC)
         if analysis.event_selection == EventSelection.NEW_EVENT:
             new_event = Event(
                 case_id=correspondence.case_id,
@@ -109,8 +119,29 @@ def approve_analysis(db: Session, correspondence_id: int) -> Analysis:
             event_repository.create_event(db, new_event)
             db.flush()
             analysis.event_id = new_event.id
+            if new_event.event_type == EventType.OFFICE_ACTION:
+                if analysis.office_action_type is not None:
+                    office_action_task_name = analysis.office_action_type
+                else:
+                    office_action_task_name = OfficeActionType.OFFICE_ACTION
+                task_service.create_primary_task(
+                    db,
+                    correspondence_id,
+                    new_event.id,
+                    TaskType.OFFICE_ACTION,
+                    office_action_task_name,
+                    office_action_due_date,
+                )
+                task_service.create_review_task(
+                    db,
+                    correspondence_id,
+                    TaskType.REVIEW_OFFICE_ACTION,
+                    "Review Office Action",
+                    created_on=approval_time.date(),
+                    event_id=new_event.id,
+                )
         analysis.status = AnalysisStatus.APPROVED
-        analysis.approved_at = datetime.now(UTC)
+        analysis.approved_at = approval_time
         db.commit()
     except Exception:
         db.rollback()
