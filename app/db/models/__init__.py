@@ -4,4 +4,3 @@ from app.db.models.case_relationship import CaseRelationship, CaseRelationshipTy
 from app.db.models.correspondence import Correspondence
 from app.db.models.document import Document
 from app.db.models.task import Task
-from app.db.models.event import Event

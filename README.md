@@ -2,9 +2,9 @@
 
 An educational backend for importing patent correspondence and reviewing proposed analysis results, built with Python, FastAPI, SQLAlchemy and PostgreSQL.
 
-The application supports case management, document and email imports, and manual review and approval of client-supplied analyses. Approval can create a new case-level event, link an existing event, or explicitly proceed without an event.
+The application supports case management, document and email imports, and manual review and approval of client-supplied analyses. Approval creates tasks directly from Office Action analyses.
 
-Automatic analysis generation, AI integration and deadline calculation are not implemented yet. Task creation is currently limited to approved analyses that create a new Office Action event.
+Automatic analysis generation, AI integration and deadline calculation are not implemented yet. Task creation is currently limited to approved Office Action analyses.
 
 ## Current functionality
 
@@ -26,35 +26,21 @@ Automatic analysis generation, AI integration and deadline calculation are not i
 
 ### Analysis
 
-- Store at most one `Analysis` per `Correspondence`, containing proposed case identifiers, event classification, Office Action type, relevant dates and timestamps.
+- Store at most one `Analysis` per `Correspondence`, containing proposed case identifiers, Office Action type, relevant dates and timestamps.
 - Create, retrieve, replace and approve a prepared analysis result through the HTTP API.
 - Track analysis review state as `pending_review` or `approved`, including the approval timestamp.
 - Prevent further edits after an analysis has been approved.
 - Roll back failed analysis writes and serialize concurrent saves for the same correspondence to prevent duplicate records.
 - Accept analysis data supplied by the client for manual review.
 
-### Events and tasks
+### Tasks
 
-- Store case-level `Event` records representing concrete business events, with an event type and creation timestamp.
-- Allow an editable `Analysis` to keep an event-selection decision as `unresolved`, `new_event`, `existing_event` or `no_event`.
-- Update the event-selection decision through the HTTP API during manual review.
-- Store an optional `event_id` on an analysis. Multiple analyses can reference the same event.
-- Require `event_id` for `existing_event` selections and reject it for `unresolved`, `new_event` and `no_event`.
-- Validate existing-event selections against event existence, case ownership and event type before saving the review decision.
-- Reset the event-selection decision to `unresolved` and clear `event_id` when the analysis event type changes.
-- Require the event-selection decision to be resolved before approval.
-- Create and link a new `Event` during approval when `new_event` is selected.
-- Revalidate an `existing_event` during approval before approving the analysis.
-- Allow `no_event` to approve an analysis without creating or linking an `Event`.
-- Keep event creation, event linkage, task creation (when applicable) and analysis approval in one transaction.
-- Make repeated approval idempotent, so an already approved analysis does not create additional events or tasks or change its original approval timestamp.
-- Prevent changes to the event-selection decision after the analysis has been approved.
-- Store `Task` records linked to a source `Correspondence`, with an optional related `Event`, including task type, name, due date and whether the task is primary.
-- Require every task to reference a `Correspondence`, while allowing tasks that do not belong to an `Event`.
-- Prevent duplicate primary tasks of the same type for the same event while allowing multiple non-primary tasks.
-- When approving a `new_event` Office Action analysis, automatically create a primary `office_action` task using `calculated_due_date`, falling back to `agent_reported_due_date`.
-- Create a non-primary `review_office_action` task named `Review Office Action`, due seven calendar days after approval. The primary task name reflects the Office Action type, defaulting to `Office Action`.
-- Automatic event matching and task creation or updates for other approval scenarios are not implemented yet.
+- Tasks belong directly to a source `Correspondence`.
+- Approval of an analysis with `office_action_type` creates a primary Office Action task and a review task due in seven days.
+- The primary task uses `calculated_due_date`, falling back to `agent_reported_due_date`.
+- Office Action approval requires a case assignment and a due date.
+- Task creation and approval are atomic; repeated approval creates no duplicate tasks.
+- Only one primary task of each type is allowed per correspondence.
 
 ### Storage and database
 
@@ -168,7 +154,6 @@ These files are stored separately from the PostgreSQL Docker volume. Removing th
 | `POST` | `/correspondences/email-import` | Import an `.eml` message and create or return a `Correspondence` record |
 | `GET` | `/correspondences/{correspondence_id}/analysis` | Retrieve the `Analysis` for a `Correspondence` |
 | `PUT` | `/correspondences/{correspondence_id}/analysis` | Create or replace the `Analysis` for a `Correspondence` |
-| `PUT` | `/correspondences/{correspondence_id}/analysis/event-selection` | Update the event-selection decision for an editable `Analysis` |
 | `POST` | `/correspondences/{correspondence_id}/analysis/approve` | Approve the `Analysis` for a `Correspondence` |
 
 The examples below use `1` as a placeholder database ID. Replace case IDs in `/cases/1` and `case_id=1` with the `id` returned when creating a case. Replace the correspondence ID in `/correspondences/1/analysis` with the `id` returned by an import.
@@ -298,7 +283,6 @@ curl -i -X PUT http://127.0.0.1:8000/correspondences/1/analysis \
     "internal_reference": "PAT-CN-001",
     "jurisdiction": "CN",
     "application_number": "202611111111.1",
-    "event_type": "office_action",
     "office_action_type": "Office Action 4MO",
     "document_date": "2026-09-15",
     "agent_notification_date": "2026-09-18",
@@ -312,8 +296,6 @@ This endpoint creates or fully replaces the editable analysis data. On an existi
 Subsequent saves keep the same analysis record and its ID. Each `Correspondence` can have at most one `Analysis`.
 
 A newly created analysis starts with `pending_review` status and no approval timestamp. Once approved, it can no longer be modified through this endpoint.
-
-If the analysis `event_type` changes while the analysis is still editable, any existing event-selection decision is reset to `unresolved` and `event_id` is cleared because the previous event link may no longer be valid.
 
 | Status | Meaning |
 | --- | --- |
@@ -342,53 +324,6 @@ This endpoint returns the existing `Analysis` without modifying it.
 | `200 OK` | The analysis was retrieved successfully |
 | `404 Not Found` | The correspondence does not exist, or it has no analysis yet |
 
-### Update analysis event selection
-
-During review, the event-selection decision for an editable analysis can be updated separately from the rest of the analysis data.
-
-To mark the analysis for creation of a new event during a future approval step:
-
-```bash
-curl -i -X PUT http://127.0.0.1:8000/correspondences/1/analysis/event-selection \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "event_selection": "new_event"
-  }'
-```
-
-The event-selection endpoint accepts the following combinations:
-
-- `unresolved` with no `event_id`
-- `new_event` with no `event_id`
-- `existing_event` with an `event_id`
-- `no_event` with no `event_id`
-
-For example, to link the analysis to an existing event:
-
-```bash
-curl -i -X PUT http://127.0.0.1:8000/correspondences/1/analysis/event-selection \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "event_selection": "existing_event",
-    "event_id": 1
-  }'
-```
-
-An `existing_event` selection is accepted only when the event exists, belongs to the same case as the correspondence and has the same event type as the analysis.
-
-Selecting `new_event` records the review decision without immediately creating an `Event`. On approval, the application creates the event and stores its ID in `event_id`. The approved analysis retains `event_selection="new_event"` to record how the event was selected.
-
-Selecting `no_event` records an explicit decision not to create or link an `Event` for this correspondence. Approval then proceeds without an `Event`.
-
-The event-selection decision cannot be changed after the analysis has been approved.
-
-| Status | Meaning |
-| --- | --- |
-| `200 OK` | The event-selection decision was updated successfully |
-| `404 Not Found` | The correspondence, analysis or selected existing event does not exist |
-| `409 Conflict` | The analysis is already approved, or the selected event belongs to another case or has an incompatible event type |
-| `422 Unprocessable Content` | Request validation failed, including an invalid combination of `event_selection` and `event_id` |
-
 ### Approve analysis
 
 A reviewed analysis can be approved without a request body:
@@ -397,26 +332,11 @@ A reviewed analysis can be approved without a request body:
 curl -i -X POST http://127.0.0.1:8000/correspondences/1/analysis/approve
 ```
 
-Approval changes the analysis status from `pending_review` to `approved` and records `approved_at`. Approval does not copy proposed analysis values into the associated `Case`. For a new Office Action event, approval also creates a primary Office Action task and a non-primary review task.
+Approval changes the analysis status from `pending_review` to `approved` and records `approved_at`. It does not copy proposed values into the associated `Case`.
 
-The event-selection decision must be resolved before approval:
+When `office_action_type` is present, approval creates the primary task and a seven-day review task directly on the correspondence. A case assignment and either `calculated_due_date` or `agent_reported_due_date` are required; missing prerequisites return `409 Conflict`.
 
-- `new_event` creates a new `Event`, links it to the analysis and approves the analysis in the same transaction.
-- `existing_event` revalidates that the selected event still exists, belongs to the correspondence case and matches the analysis event type before approval.
-- `no_event` approves the analysis without creating or linking an event.
-- `unresolved` blocks approval with `409 Conflict`.
-
-Creating a new event requires the correspondence to belong to a case and the analysis to have an event type. For a new Office Action event, at least one due date (`calculated_due_date` or `agent_reported_due_date`) is also required. If both are missing, approval returns `409 Conflict` without creating an event or tasks.
-
-The operation is idempotent. Approving an already approved analysis returns the existing result without changing its original approval timestamp or creating additional events or tasks.
-
-After approval, the analysis can no longer be replaced and its event-selection decision can no longer be changed.
-
-| Status | Meaning |
-| --- | --- |
-| `200 OK` | The analysis was approved, or had already been approved |
-| `404 Not Found` | The correspondence, analysis or required existing event does not exist |
-| `409 Conflict` | The event-selection decision is unresolved, a new event cannot be created because required data is missing, or an existing event no longer matches the analysis |
+Repeated approval preserves the approval timestamp and creates no additional tasks. Approved analyses cannot be replaced. Missing correspondence or analysis returns `404 Not Found`.
 
 ## Tests
 
@@ -454,8 +374,6 @@ Tests cover:
 - **Storage and direct uploads:** local file storage, the `Correspondence`–`Document` relationship, document import, upload API behavior, and database rollback and file cleanup after failures.
 - **Email parsing:** metadata, plain-text and HTML-only body extraction, MIME attachments including attached emails and multipart content, unnamed attachments, case-insensitive headers and a synthetic email fixture. Invalid-input tests cover empty content, plain text, PDF content and unsupported character encodings.
 - **Email import:** original `.eml` storage, attachment records, byte-identical duplicate detection, missing-case validation, rollback and file cleanup. API tests cover new and duplicate imports, invalid attachment metadata, and rejection of invalid email content without creating records or files.
-- **Analysis service:** creation, retrieval, replacement without duplicates, clearing stored values, timestamp updates, review-state handling, prevention of edits after approval, missing-correspondence and missing-analysis handling, rollback after failed writes, and concurrency handling. Event-selection and approval tests cover `unresolved`, `new_event`, `existing_event` and `no_event`, existing-event validation and revalidation, new-event creation and linkage, missing approval prerequisites, transactional rollback, idempotent repeated approval, concurrent approval without duplicate events or tasks, automatic Office Action task creation, due-date selection and seven-day review deadlines.
-- **Analysis API:** `201 Created` on the first save, `200 OK` on replacement, retrieval and approval, event-selection updates for `unresolved`, `new_event`, `existing_event` and `no_event`, `404 Not Found` for missing resources, `409 Conflict` for approved analyses, unresolved approval decisions, missing new-event prerequisites (including Office Action due dates) and invalid event links, and `422 Unprocessable Content` for invalid input and invalid event-selection combinations.
 
 After adding migrations, apply them to both the application and test databases before running integration tests.
 

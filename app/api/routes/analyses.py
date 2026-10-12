@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_db
-from app.domain.exceptions import AnalysisAlreadyApprovedError, AnalysisEventSelectionUnresolvedError, AnalysisEventTypeRequiredError, AnalysisNotFoundError, CorrespondenceCaseRequiredError, CorrespondenceNotFoundError, EventCaseMismatchError, EventNotFoundError, EventTypeMismatchError, OfficeActionDueDateRequiredError
-from app.schemas.analysis import AnalysisCreate, AnalysisEventSelectionUpdate, AnalysisRead
+from app.domain.exceptions import AnalysisAlreadyApprovedError, AnalysisNotFoundError, CorrespondenceCaseRequiredError, CorrespondenceNotFoundError, OfficeActionDueDateRequiredError
+from app.schemas.analysis import AnalysisCreate, AnalysisRead
 from app.services import analysis_service
 
 
@@ -56,43 +56,7 @@ def approve_analysis(correspondence_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except AnalysisNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except EventNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except AnalysisEventSelectionUnresolvedError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except CorrespondenceCaseRequiredError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    except AnalysisEventTypeRequiredError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    except EventCaseMismatchError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    except EventTypeMismatchError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except OfficeActionDueDateRequiredError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-
-
-@router.put(
-    "/correspondences/{correspondence_id}/analysis/event-selection",
-    response_model=AnalysisRead,
-)
-def update_analysis_event_selection(
-    correspondence_id: int,
-    selection_data: AnalysisEventSelectionUpdate,
-    db: Session = Depends(get_db),
-):
-    try:
-        analysis = analysis_service.update_analysis_event_selection(db, correspondence_id, selection_data)
-        return analysis
-    except CorrespondenceNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except AnalysisNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except EventNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except AnalysisAlreadyApprovedError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    except EventCaseMismatchError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    except EventTypeMismatchError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc

@@ -9,15 +9,14 @@ from app.domain.task import TaskType
 
 if TYPE_CHECKING:
     from app.db.models.correspondence import Correspondence
-    from app.db.models.event import Event
 
 
 class Task(Base):
     __tablename__ = "tasks"
     __table_args__ = (
         Index(
-            "uq_tasks_primary_event_task_type",
-            "event_id",
+            "uq_tasks_primary_correspondence_task_type",
+            "correspondence_id",
             "task_type",
             unique=True,
             postgresql_where=text("is_primary = true"),
@@ -37,6 +36,4 @@ class Task(Base):
     due_date: Mapped[date] = mapped_column(Date, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     correspondence_id: Mapped[int] = mapped_column(ForeignKey("correspondences.id"), nullable=False)
-    event_id: Mapped[int | None] = mapped_column(ForeignKey("events.id"), nullable=True)
     correspondence: Mapped["Correspondence"] = relationship(back_populates="tasks")
-    event: Mapped["Event | None"] = relationship(back_populates="tasks")

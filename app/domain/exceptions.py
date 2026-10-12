@@ -30,27 +30,7 @@ class AnalysisAlreadyApprovedError(Exception):
     pass
 
 
-class EventNotFoundError(Exception):
-    pass
-
-
-class EventCaseMismatchError(Exception):
-    pass
-
-
-class EventTypeMismatchError(Exception):
-    pass
-
-
-class AnalysisEventSelectionUnresolvedError(Exception):
-    pass
-
-
 class CorrespondenceCaseRequiredError(Exception):
-    pass
-
-
-class AnalysisEventTypeRequiredError(Exception):
     pass
 
 

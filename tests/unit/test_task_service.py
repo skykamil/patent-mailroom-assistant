@@ -34,42 +34,12 @@ def test_create_review_task_creates_non_primary_task_due_in_seven_days(monkeypat
     assert called_db is db
     assert isinstance(task, Task)
     assert task.correspondence_id == 123
-    assert task.event_id is None
     assert task.task_type == TaskType.REVIEW_AGENT_COMMUNICATION
     assert task.name == "Review agent communication"
     assert task.is_primary is False
     assert task.due_date == date(2026, 10, 14)
     assert result is repository_result
 
-
-def test_create_review_task_passes_event_id_to_task(monkeypatch):
-    db = Mock(spec=Session)
-    create_task_mock = Mock()
-
-    monkeypatch.setattr(
-        task_service.task_repository,
-        "create_task",
-        create_task_mock,
-    )
-
-    task_service.create_review_task(
-        db=db,
-        correspondence_id=123,
-        task_type=TaskType.REVIEW_OFFICE_ACTION,
-        name="Review Office Action",
-        created_on=date(2026, 10, 7),
-        event_id=456,
-    )
-
-    create_task_mock.assert_called_once()
-
-    _, task = create_task_mock.call_args.args
-
-    assert task.correspondence_id == 123
-    assert task.event_id == 456
-    assert task.task_type == TaskType.REVIEW_OFFICE_ACTION
-    assert task.is_primary is False
-    assert task.due_date == date(2026, 10, 14)
 
 def test_create_primary_task_creates_primary_task_with_given_due_date(monkeypatch):
     db = Mock(spec=Session)
@@ -85,7 +55,6 @@ def test_create_primary_task_creates_primary_task_with_given_due_date(monkeypatc
     result = task_service.create_primary_task(
         db=db,
         correspondence_id=123,
-        event_id=456,
         task_type=TaskType.OFFICE_ACTION,
         name="Office Action response",
         due_date=date(2027, 1, 15),
@@ -98,7 +67,6 @@ def test_create_primary_task_creates_primary_task_with_given_due_date(monkeypatc
     assert called_db is db
     assert isinstance(task, Task)
     assert task.correspondence_id == 123
-    assert task.event_id == 456
     assert task.task_type == TaskType.OFFICE_ACTION
     assert task.name == "Office Action response"
     assert task.is_primary is True

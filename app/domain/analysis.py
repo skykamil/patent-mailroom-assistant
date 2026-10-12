@@ -1,12 +1,6 @@
 from enum import StrEnum
 
 
-class EventType(StrEnum):
-    OFFICE_ACTION = "office_action"
-    APPLICATION = "application"
-    PUBLICATION = "publication"
-
-
 class OfficeActionType(StrEnum):
     OFFICE_ACTION = "Office Action"
     OFFICE_ACTION_1MO = "Office Action 1MO"
@@ -18,10 +12,3 @@ class OfficeActionType(StrEnum):
 class AnalysisStatus(StrEnum):
     PENDING_REVIEW = "pending_review"
     APPROVED = "approved"
-
-
-class EventSelection(StrEnum):
-    UNRESOLVED = "unresolved"
-    NEW_EVENT = "new_event"
-    EXISTING_EVENT = "existing_event"
-    NO_EVENT = "no_event"

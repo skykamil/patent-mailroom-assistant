@@ -13,7 +13,6 @@ def create_review_task(
     task_type: TaskType,
     name: str,
     created_on: date,
-    event_id: int | None = None,
 ) -> Task:
     due_date = created_on + timedelta(days=7)
     task = Task(
@@ -22,7 +21,6 @@ def create_review_task(
         task_type=task_type,
         name=name,
         due_date=due_date,
-        event_id=event_id
     )
     return task_repository.create_task(db, task)
 
@@ -30,7 +28,6 @@ def create_review_task(
 def create_primary_task(
     db: Session,
     correspondence_id: int,
-    event_id: int,
     task_type: TaskType,
     name: str,
     due_date: date,
@@ -38,7 +35,6 @@ def create_primary_task(
     task = Task(
         is_primary=True,
         correspondence_id=correspondence_id,
-        event_id=event_id,
         task_type=task_type,
         name=name,
         due_date=due_date,
