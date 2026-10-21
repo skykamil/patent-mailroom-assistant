@@ -1,20 +1,8 @@
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 from app.domain.analysis import AnalysisStatus, OfficeActionType
-
-
-class AnalysisCreate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    internal_reference: str | None = Field(default=None, max_length=50)
-    jurisdiction: str | None = Field(default=None, max_length=2)
-    application_number: str | None = Field(default=None, max_length=50)
-    office_action_type: OfficeActionType | None = None
-    document_date: date | None = None
-    agent_notification_date: date | None = None
-    agent_reported_due_date: date | None = None
-    calculated_due_date: date | None = None
 
 
 class AnalysisRead(BaseModel):

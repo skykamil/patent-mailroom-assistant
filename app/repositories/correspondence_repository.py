@@ -9,11 +9,6 @@ def create_correspondence(db: Session, correspondence: Correspondence) -> Corres
     return correspondence
 
 
-def get_correspondence_by_source_sha256(db: Session, source_sha256: str) -> Correspondence | None:
-    statement = select(Correspondence).where(Correspondence.source_sha256 == source_sha256)
-    return db.scalar(statement)
-
-
 def get_correspondence_by_id(db: Session, correspondence_id: int) -> Correspondence | None:
     statement = select(Correspondence).where(Correspondence.id == correspondence_id)
     return db.scalar(statement)

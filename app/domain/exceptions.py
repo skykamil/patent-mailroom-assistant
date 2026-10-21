@@ -24,15 +24,3 @@ class CorrespondenceNotFoundError(Exception):
 
 class AnalysisNotFoundError(Exception):
     pass
-
-
-class AnalysisAlreadyApprovedError(Exception):
-    pass
-
-
-class CorrespondenceCaseRequiredError(Exception):
-    pass
-
-
-class OfficeActionDueDateRequiredError(Exception):
-    pass
