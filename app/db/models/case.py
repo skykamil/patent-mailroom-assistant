@@ -8,13 +8,6 @@ from app.db.base import Base
 
 class Case(Base):
     __tablename__ = "cases"
-    __table_args__ = (
-        UniqueConstraint(
-            "jurisdiction",
-            "application_number",
-            name="uq_cases_jurisdiction_application_number"
-        ),
-    )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     internal_reference: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
     jurisdiction: Mapped[str] = mapped_column(String(10), nullable=False)

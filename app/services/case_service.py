@@ -4,7 +4,7 @@ from psycopg.errors import ForeignKeyViolation, UniqueViolation
 
 from app.db.models.case import Case
 from app.domain.case_rules import derive_jurisdiction
-from app.domain.exceptions import ApplicationNumberAlreadyExistsError, CaseAlreadyExistsError, CaseInUseError,  CaseNotFoundError
+from app.domain.exceptions import CaseAlreadyExistsError, CaseInUseError, CaseNotFoundError
 from app.repositories import case_repository
 from app.schemas.case import CaseCreate, CaseUpdate
 
@@ -32,11 +32,6 @@ def create_case(db: Session, case_data: CaseCreate) -> Case:
         db.rollback()
         if (
             isinstance(exc.orig, UniqueViolation)
-            and exc.orig.diag.constraint_name == "uq_cases_jurisdiction_application_number"
-            ):
-            raise ApplicationNumberAlreadyExistsError(f"Application number {case_data.application_number} already exists in jurisdiction {jurisdiction}") from exc
-        if (
-            isinstance(exc.orig, UniqueViolation)
             and exc.orig.diag.constraint_name == "cases_internal_reference_key"
         ):
             raise CaseAlreadyExistsError(f"Case with internal reference {case_data.internal_reference} already exists") from exc
@@ -57,17 +52,10 @@ def update_case(db: Session, case_id: int, case_data: CaseUpdate) -> Case:
     update_data = case_data.model_dump(exclude_unset=True)
     for field_name, value in update_data.items():
         setattr(case, field_name, value)
-    attempted_application_number = case.application_number
-    jurisdiction = case.jurisdiction
     try:
         db.commit()
-    except IntegrityError as exc:
+    except IntegrityError:
         db.rollback()
-        if (
-            isinstance(exc.orig, UniqueViolation)
-            and exc.orig.diag.constraint_name == "uq_cases_jurisdiction_application_number"
-        ):
-            raise ApplicationNumberAlreadyExistsError(f"Application number {attempted_application_number} already exists in jurisdiction {jurisdiction}") from exc
         raise
     db.refresh(case)
     return case

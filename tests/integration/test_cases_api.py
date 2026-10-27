@@ -111,7 +111,7 @@ def test_create_case_allows_same_application_number_in_different_jurisdictions()
         delete_case_by_internal_reference("PAT-EP-904")
 
 
-def test_create_case_returns_409_for_duplicate_application_number_in_same_jurisdiction():
+def test_create_case_allows_duplicate_application_number_in_same_jurisdiction():
     delete_case_by_internal_reference("PAT-CN-907")
     delete_case_by_internal_reference("PAT-CN-908")
     try:
@@ -130,7 +130,7 @@ def test_create_case_returns_409_for_duplicate_application_number_in_same_jurisd
             },
         )
         assert first_response.status_code == status.HTTP_201_CREATED
-        assert second_response.status_code == status.HTTP_409_CONFLICT
+        assert second_response.status_code == status.HTTP_201_CREATED
     finally:
         delete_case_by_internal_reference("PAT-CN-907")
         delete_case_by_internal_reference("PAT-CN-908")
@@ -245,7 +245,7 @@ def test_update_case_returns_404_when_case_does_not_exist():
     assert response.json()["detail"] == "Case with id 999999 not found"
 
 
-def test_update_case_returns_409_for_duplicate_application_number():
+def test_update_case_allows_duplicate_application_number():
     delete_case_by_internal_reference("PAT-CN-914")
     delete_case_by_internal_reference("PAT-CN-915")
     try:
@@ -270,10 +270,10 @@ def test_update_case_returns_409_for_duplicate_application_number():
                 "application_number": "555666777"
             },
         )
-        assert update_response.status_code == status.HTTP_409_CONFLICT
+        assert update_response.status_code == status.HTTP_200_OK
         get_response = client.get(f"/cases/{second_case_id}")
         assert get_response.status_code == status.HTTP_200_OK
-        assert get_response.json()["application_number"] == "888999000"
+        assert get_response.json()["application_number"] == "555666777"
     finally:
         delete_case_by_internal_reference("PAT-CN-914")
         delete_case_by_internal_reference("PAT-CN-915")
