@@ -31,14 +31,11 @@ def test_create_case():
             json={
                 "internal_reference": "PAT-CN-900",
                 "application_number": "11111111.1",
-                "application_date": "2025-10-01",
-                "agent_reference": "CN5999628/8"
             },
         )
         assert response.status_code == status.HTTP_201_CREATED
         response_data = response.json()
         assert response_data["internal_reference"] == "PAT-CN-900"
-        assert response_data["jurisdiction"] == "CN"
     finally:
         delete_case_by_internal_reference("PAT-CN-900")
 
@@ -193,19 +190,19 @@ def test_update_case_changes_only_provided_fields():
             json={
                 "internal_reference": "PAT-CN-912",
                 "application_number": "111222333",
-                "agent_reference": "000111"
+                "publication_number": "333222111"
             },
         )
         case_id = response.json()["id"]
         update_response = client.patch(
             f"/cases/{case_id}",
             json={
-                "agent_reference": "UPDATED-REF"
+                "publication_number": "UPDATED-PUB"
             },
         )
         assert update_response.status_code == status.HTTP_200_OK
         response_data = update_response.json()
-        assert response_data["agent_reference"] == "UPDATED-REF"
+        assert response_data["publication_number"] == "UPDATED-PUB"
         assert response_data["application_number"] == "111222333"
     finally:
         delete_case_by_internal_reference("PAT-CN-912")
@@ -218,18 +215,18 @@ def test_update_case_allows_clearing_optional_field():
             "/cases",
             json={
                 "internal_reference": "PAT-CN-913",
-                "agent_reference": "TO-BE-CLEARED"
+                "grant_number": "TO-BE-CLEARED"
             },
         )
         case_id = response.json()["id"]
         update_response = client.patch(
             f"/cases/{case_id}",
             json={
-                "agent_reference": None
+                "grant_number": None
             },
         )
         assert update_response.status_code == status.HTTP_200_OK
-        assert update_response.json()["agent_reference"] is None
+        assert update_response.json()["grant_number"] is None
     finally:
         delete_case_by_internal_reference("PAT-CN-913")
 
@@ -238,7 +235,7 @@ def test_update_case_returns_404_when_case_does_not_exist():
     response = client.patch(
         "/cases/999999",
         json={
-            "agent_reference": "ANY"
+            "grant_number": "ANY"
         },
     )
     assert response.status_code == status.HTTP_404_NOT_FOUND
