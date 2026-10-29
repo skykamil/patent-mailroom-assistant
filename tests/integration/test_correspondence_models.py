@@ -1,28 +1,44 @@
+from uuid import uuid4
+
+from app.db.models.case import Case
 from app.db.models.correspondence import Correspondence
-from app.db.models.document import Document
-from app.domain.correspondence import ImportType
+from app.db.models.file import File
 from tests.integration.db import TestSessionLocal
 
 
-def test_correspondence_has_documents():
+def test_correspondence_has_files():
     db = TestSessionLocal()
+
     try:
-        correspondence = Correspondence(import_type=ImportType.DIRECT_UPLOAD)
+        case = Case(
+            internal_reference=f"PAT-CN-{uuid4().int}"
+        )
+        db.add(case)
+        db.flush()
+
+        correspondence = Correspondence(
+            case_id=case.id,
+            submission_id=str(uuid4())
+        )
         db.add(correspondence)
         db.flush()
-        document = Document(
+
+        file = File(
             correspondence=correspondence,
-            original_filename="Office_Action.pdf",
-            storage_path="data/uploads/test-office-action.pdf",
+            filename="Office_Action.pdf",
+            storage_key="data/uploads/test-office-action.pdf",
             mime_type="application/pdf",
-            file_size=1234,
-            sha256="1" * 64
+            size_bytes=1234,
+            source_file_id=str(uuid4())
         )
-        db.add(document)
+        db.add(file)
         db.flush()
-        assert len(correspondence.documents) == 1
-        assert correspondence.documents[0].original_filename == "Office_Action.pdf"
-        assert document.correspondence is correspondence
+
+        assert correspondence.case_id == case.id
+        assert len(correspondence.files) == 1
+        assert correspondence.files[0].filename == "Office_Action.pdf"
+        assert file.correspondence is correspondence
+
     finally:
         db.rollback()
         db.close()
