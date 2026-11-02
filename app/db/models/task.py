@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Date, DateTime, Boolean, Enum, ForeignKey, Integer, String, func
+from sqlalchemy import Date, DateTime, Boolean, Enum, ForeignKey, ForeignKeyConstraint, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -14,11 +14,18 @@ if TYPE_CHECKING:
 
 class Task(Base):
     __tablename__ = "tasks"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["correspondence_id", "case_id"],
+            ["correspondences.id", "correspondences.case_id"],
+            name="fk_tasks_correspondence_case"
+        ),
+    )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    case_id: Mapped[int] = mapped_column(ForeignKey("cases.id"), nullable=False)
+    case_id: Mapped[int] = mapped_column(ForeignKey("cases.id", name="fk_tasks_case_id_cases"), nullable=False)
     case: Mapped["Case"] = relationship(back_populates="tasks")
-    correspondence_id: Mapped[int] = mapped_column(ForeignKey("correspondences.id"), nullable=False)
-    correspondence: Mapped["Correspondence"] = relationship(back_populates="tasks")
+    correspondence_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    correspondence: Mapped["Correspondence"] = relationship(back_populates="tasks", foreign_keys=[correspondence_id])
     task_type: Mapped[TaskType] = mapped_column(
         Enum(
             TaskType,
@@ -31,4 +38,4 @@ class Task(Base):
     due_date: Mapped[date] = mapped_column(Date, nullable=False)
     dates_manually_adjusted: Mapped[bool] = mapped_column(Boolean, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    proposal_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    proposal_id: Mapped[str | None] = mapped_column(String(50), nullable=True)

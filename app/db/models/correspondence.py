@@ -20,6 +20,11 @@ class Correspondence(Base):
             "submission_id",
             name="uq_correspondences_submission_id"
         ),
+        UniqueConstraint(
+            "id",
+            "case_id",
+            name="uq_correspondences_id_case_id"
+        ),
     )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     case_id: Mapped[int] = mapped_column(ForeignKey("cases.id"), nullable=False)
@@ -28,4 +33,4 @@ class Correspondence(Base):
     submission_id: Mapped[str] = mapped_column(String(36), nullable=False)
     files: Mapped[list["File"]] = relationship(back_populates="correspondence")
     analysis: Mapped["Analysis | None"] = relationship(back_populates="correspondence")
-    tasks: Mapped[list["Task"]] = relationship(back_populates="correspondence")
+    tasks: Mapped[list["Task"]] = relationship(back_populates="correspondence", foreign_keys="Task.correspondence_id")
