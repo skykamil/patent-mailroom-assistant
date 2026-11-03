@@ -1,10 +1,12 @@
+from uuid import uuid4
+
 from fastapi import status
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
 from app.api.dependencies import get_db
+from app.db.models.case import Case
 from app.db.models.correspondence import Correspondence
-from app.domain.correspondence import ImportType
 from app.main import app
 from tests.integration.db import TestSessionLocal
 
@@ -39,17 +41,34 @@ def test_get_analysis_returns_404_when_correspondence_does_not_exist():
 
 def test_get_analysis_returns_404_when_analysis_does_not_exist():
     db = TestSessionLocal()
-    correspondence = None
+
+    case = Case(internal_reference=f"TEST-{uuid4().hex[:12]}")
+    correspondence = Correspondence(
+        case=case,
+        submission_id=str(uuid4()),
+    )
+
     try:
-        correspondence = Correspondence(import_type=ImportType.EMAIL)
         db.add(correspondence)
         db.commit()
         db.refresh(correspondence)
-        response = client.get(f"/correspondences/{correspondence.id}/analysis")
+
+        response = client.get(
+            f"/correspondences/{correspondence.id}/analysis"
+        )
+
         assert response.status_code == status.HTTP_404_NOT_FOUND
-        assert response.json()["detail"] == f"Analysis for correspondence with id {correspondence.id} not found"
+        assert response.json()["detail"] == (
+            f"Analysis for correspondence with id "
+            f"{correspondence.id} not found"
+        )
+
     finally:
-        if correspondence is not None:
+        db.rollback()
+
+        if correspondence.id is not None:
             db.delete(correspondence)
-        db.commit()
+            db.delete(case)
+            db.commit()
+
         db.close()

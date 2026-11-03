@@ -1,9 +1,10 @@
 import pytest
+from uuid import uuid4
 
 from sqlalchemy import func, select
 
+from app.db.models.case import Case
 from app.db.models.correspondence import Correspondence
-from app.domain.correspondence import ImportType
 from app.domain.exceptions import AnalysisNotFoundError, CorrespondenceNotFoundError
 from app.services import analysis_service
 from tests.integration.db import TestSessionLocal
@@ -28,20 +29,25 @@ def test_get_analysis_by_correspondence_id_raises_correspondence_not_found():
 
 def test_get_analysis_by_correspondence_id_raises_analysis_not_found():
     db = TestSessionLocal()
-    correspondence = None
+
     try:
-        correspondence = Correspondence(import_type=ImportType.EMAIL)
+        case = Case(internal_reference=f"TEST-{uuid4().hex[:12]}")
+        correspondence = Correspondence(
+            case=case,
+            submission_id=str(uuid4()),
+        )
+
         db.add(correspondence)
-        db.commit()
-        db.refresh(correspondence)
+        db.flush()
+
         with pytest.raises(
             AnalysisNotFoundError,
             match=f"Analysis for correspondence with id {correspondence.id} not found",
         ):
-            analysis_service.get_analysis_by_correspondence_id(db, correspondence.id)
+            analysis_service.get_analysis_by_correspondence_id(
+                db, correspondence.id
+            )
+
     finally:
         db.rollback()
-        if correspondence is not None:
-            db.delete(correspondence)
-        db.commit()
         db.close()
