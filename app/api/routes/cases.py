@@ -19,7 +19,7 @@ def create_case(case_data: CaseCreate, db: Session = Depends(get_db)):
     try:
         return case_service.create_case(db, case_data)
     except CaseAlreadyExistsError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
 @router.get(
@@ -30,7 +30,7 @@ def get_case(case_id: int, db: Session = Depends(get_db)):
     try:
         return case_service.get_case_by_id(db, case_id)
     except CaseNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
 @router.patch(
@@ -41,7 +41,7 @@ def update_case(case_id: int, case_data: CaseUpdate, db: Session = Depends(get_d
     try:
         return case_service.update_case(db, case_id, case_data)
     except CaseNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
 @router.delete(
@@ -52,6 +52,6 @@ def delete_case(case_id: int, db: Session = Depends(get_db)):
     try:
         case_service.delete_case(db, case_id)
     except CaseNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except CaseInUseError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
