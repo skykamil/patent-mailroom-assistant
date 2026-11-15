@@ -20,7 +20,7 @@ def test_case_has_files():
             storage_key="data/uploads/test-office-action.pdf",
             mime_type="application/pdf",
             size_bytes=1234,
-            source_file_id=str(uuid4()),
+            client_file_id=str(uuid4()),
         )
         db.add(file)
         db.flush()

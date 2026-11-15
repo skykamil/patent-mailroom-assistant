@@ -18,5 +18,5 @@ class File(Base):
     mime_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
     storage_key: Mapped[str] = mapped_column(String(500), nullable=False)
     size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    source_file_id: Mapped[str] = mapped_column(String(36), nullable=False, unique=True)
+    client_file_id: Mapped[str] = mapped_column(String(36), nullable=False, unique=True)
     case: Mapped["Case"] = relationship(back_populates="files")
