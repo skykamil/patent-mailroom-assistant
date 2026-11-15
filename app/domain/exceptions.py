@@ -10,5 +10,9 @@ class CaseInUseError(Exception):
     pass
 
 
+class CaseReferenceNotFoundError(Exception):
+    pass
+
+
 class InvalidEmailError(Exception):
     pass

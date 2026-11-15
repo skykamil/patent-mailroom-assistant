@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from psycopg.errors import ForeignKeyViolation, UniqueViolation
 
 from app.db.models.case import Case
-from app.domain.exceptions import CaseAlreadyExistsError, CaseInUseError, CaseNotFoundError
+from app.domain.exceptions import CaseAlreadyExistsError, CaseInUseError, CaseNotFoundError, CaseReferenceNotFoundError
 from app.repositories import case_repository
 from app.schemas.case import CaseCreate, CaseUpdate
 
@@ -37,6 +37,14 @@ def get_case_by_id(db: Session, case_id: int) -> Case:
     case = case_repository.get_case_by_id(db, case_id)
     if case is None:
         raise CaseNotFoundError(f"Case with id {case_id} not found")
+    return case
+
+
+def get_case_by_reference(db: Session, reference: str) -> Case:
+    reference_number = reference.strip().upper()
+    case = case_repository.get_case_by_internal_reference(db, reference_number)
+    if case is None:
+        raise CaseReferenceNotFoundError(f"Case with internal reference {reference_number} not found")
     return case
 
 
