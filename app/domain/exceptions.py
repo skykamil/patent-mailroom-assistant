@@ -12,11 +12,3 @@ class CaseInUseError(Exception):
 
 class InvalidEmailError(Exception):
     pass
-
-
-class CorrespondenceNotFoundError(Exception):
-    pass
-
-
-class AnalysisNotFoundError(Exception):
-    pass

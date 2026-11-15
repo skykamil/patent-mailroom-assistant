@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Date, DateTime, Boolean, Enum, ForeignKey, ForeignKeyConstraint, Integer, String, func
+from sqlalchemy import Date, DateTime, Boolean, Enum, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -9,23 +9,14 @@ from app.domain.task import TaskType
 
 if TYPE_CHECKING:
     from app.db.models.case import Case
-    from app.db.models.correspondence import Correspondence
 
 
 class Task(Base):
     __tablename__ = "tasks"
-    __table_args__ = (
-        ForeignKeyConstraint(
-            ["correspondence_id", "case_id"],
-            ["correspondences.id", "correspondences.case_id"],
-            name="fk_tasks_correspondence_case"
-        ),
-    )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    submission_id: Mapped[str] = mapped_column(String(36), nullable=False)
     case_id: Mapped[int] = mapped_column(ForeignKey("cases.id", name="fk_tasks_case_id_cases"), nullable=False)
     case: Mapped["Case"] = relationship(back_populates="tasks")
-    correspondence_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    correspondence: Mapped["Correspondence"] = relationship(back_populates="tasks", foreign_keys=[correspondence_id])
     task_type: Mapped[TaskType] = mapped_column(
         Enum(
             TaskType,
