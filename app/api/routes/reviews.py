@@ -4,7 +4,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 
 from app.domain.exceptions import InvalidEmailError
 from app.schemas.review import ReviewPrepareResponse
-from app.services.correspondence_service import IncomingDocument, prepare_incoming_documents
+from app.services.review_service import IncomingDocument, prepare_incoming_documents
 
 
 router = APIRouter()

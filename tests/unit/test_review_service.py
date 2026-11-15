@@ -1,7 +1,7 @@
 from email.message import EmailMessage
 from uuid import uuid4
 
-from app.services.correspondence_service import (
+from app.services.review_service import (
     IncomingDocument,
     prepare_incoming_documents,
 )
