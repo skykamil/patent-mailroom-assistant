@@ -3,10 +3,15 @@ from uuid import uuid4, uuid5
 
 import pytest
 
+from app.domain.doc_type import DocType
+from app.domain.exceptions import InvalidFileSelectionError
 from app.services.review_service import (
+    ExpandedDocument,
+    FileSelection,
     IncomingDocument,
     expand_incoming_documents,
     prepare_incoming_documents,
+    select_documents_to_save,
 )
 
 
@@ -185,3 +190,63 @@ def test_expand_incoming_documents_returns_email_attachment_content():
 def test_expand_incoming_documents_requires_at_least_one_document():
     with pytest.raises(ValueError):
         expand_incoming_documents([])
+
+
+def make_expanded_document(file_id, filename="file.pdf"):
+    return ExpandedDocument(
+        file_id=file_id,
+        source_file_id=file_id,
+        attachment_index=None,
+        filename=filename,
+        mime_type="application/pdf",
+        content=b"content",
+    )
+
+
+def test_select_documents_to_save_keeps_expanded_order_and_skips_unselected():
+    first_id, second_id, third_id = uuid4(), uuid4(), uuid4()
+    expanded_documents = [
+        make_expanded_document(first_id),
+        make_expanded_document(second_id),
+        make_expanded_document(third_id),
+    ]
+    selections = [
+        FileSelection(file_id=third_id, doc_type=DocType.CLAIMS),
+        FileSelection(file_id=first_id, doc_type=DocType.OFFICE_ACTION),
+    ]
+
+    result = select_documents_to_save(expanded_documents, selections)
+
+    assert [item.document.file_id for item in result] == [first_id, third_id]
+    assert [item.doc_type for item in result] == [DocType.OFFICE_ACTION, DocType.CLAIMS]
+
+
+def test_select_documents_to_save_requires_selection():
+    expanded_documents = [make_expanded_document(uuid4())]
+
+    with pytest.raises(InvalidFileSelectionError, match="No files selected"):
+        select_documents_to_save(expanded_documents, [])
+
+
+def test_select_documents_to_save_rejects_duplicate_file_ids():
+    file_id = uuid4()
+    expanded_documents = [make_expanded_document(file_id)]
+    selections = [
+        FileSelection(file_id=file_id, doc_type=DocType.OTHER),
+        FileSelection(file_id=file_id, doc_type=DocType.CLAIMS),
+    ]
+
+    with pytest.raises(InvalidFileSelectionError, match="Duplicate file IDs"):
+        select_documents_to_save(expanded_documents, selections)
+
+
+def test_select_documents_to_save_rejects_unknown_file_id():
+    known_id, unknown_id = uuid4(), uuid4()
+    expanded_documents = [make_expanded_document(known_id)]
+    selections = [
+        FileSelection(file_id=known_id, doc_type=DocType.OTHER),
+        FileSelection(file_id=unknown_id, doc_type=DocType.OTHER),
+    ]
+
+    with pytest.raises(InvalidFileSelectionError, match=str(unknown_id)):
+        select_documents_to_save(expanded_documents, selections)

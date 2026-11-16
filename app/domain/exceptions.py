@@ -16,3 +16,7 @@ class CaseReferenceNotFoundError(Exception):
 
 class InvalidEmailError(Exception):
     pass
+
+
+class InvalidFileSelectionError(Exception):
+    pass
