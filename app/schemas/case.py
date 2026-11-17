@@ -4,6 +4,7 @@ from app.domain.case_rules import validate_internal_reference_format
 
 
 class CaseCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     internal_reference: str = Field(max_length=50)
 
     @field_validator("internal_reference")

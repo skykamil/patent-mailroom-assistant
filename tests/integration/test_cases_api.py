@@ -83,6 +83,21 @@ def test_create_case_returns_422_when_internal_reference_is_too_long():
     assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
 
+def test_create_case_returns_422_for_unknown_field():
+    delete_case_by_internal_reference("PAT-CN-950")
+    try:
+        response = client.post(
+            "/cases",
+            json={
+                "internal_reference": "PAT-CN-950",
+                "aplication_number": "CN2024000001",
+            },
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+    finally:
+        delete_case_by_internal_reference("PAT-CN-950")
+
+
 def test_create_case_allows_same_application_number_in_different_jurisdictions():
     delete_case_by_internal_reference("PAT-CN-903")
     delete_case_by_internal_reference("PAT-EP-904")
