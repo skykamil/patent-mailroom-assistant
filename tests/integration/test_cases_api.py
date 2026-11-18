@@ -98,32 +98,7 @@ def test_create_case_returns_422_for_unknown_field():
         delete_case_by_internal_reference("PAT-CN-950")
 
 
-def test_create_case_allows_same_application_number_in_different_jurisdictions():
-    delete_case_by_internal_reference("PAT-CN-903")
-    delete_case_by_internal_reference("PAT-EP-904")
-    try:
-        first_response = client.post(
-            "/cases",
-            json={
-                "internal_reference": "PAT-CN-903",
-                "application_number": "123456789"
-            },
-        )
-        second_response = client.post(
-            "/cases",
-            json={
-                "internal_reference": "PAT-EP-904",
-                "application_number": "123456789"
-            },
-        )
-        assert first_response.status_code == status.HTTP_201_CREATED
-        assert second_response.status_code == status.HTTP_201_CREATED
-    finally:
-        delete_case_by_internal_reference("PAT-CN-903")
-        delete_case_by_internal_reference("PAT-EP-904")
-
-
-def test_create_case_allows_duplicate_application_number_in_same_jurisdiction():
+def test_create_case_allows_duplicate_application_number():
     delete_case_by_internal_reference("PAT-CN-907")
     delete_case_by_internal_reference("PAT-CN-908")
     try:
